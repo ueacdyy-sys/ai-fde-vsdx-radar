@@ -1,0 +1,397 @@
+{
+  "name": "ai-fde-vsdx-radar",
+  "displayName": "AI-FDE VSDX Radar",
+  "description": "Preview cache, QA linter, and review dashboard for Microsoft Visio VSDX files.",
+  "version": "0.1.0",
+  "publisher": "ai-fde-lab",
+  "license": "SEE LICENSE IN LICENSE.txt",
+  "author": {
+    "name": "AI-FDE Lab"
+  },
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#10243E",
+    "theme": "dark"
+  },
+  "pricing": "Free",
+  "preview": true,
+  "keywords": [
+    "vsdx",
+    "visio",
+    "diagram",
+    "preview",
+    "linter",
+    "qa",
+    "dashboard",
+    "workflow"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ueacdyy-sys/ai-fde-vsdx-radar.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ueacdyy-sys/ai-fde-vsdx-radar/issues"
+  },
+  "homepage": "https://github.com/ueacdyy-sys/ai-fde-vsdx-radar#readme",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Linters",
+    "Visualization",
+    "Other"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "AI-FDE VSDX Radar executes a local PowerShell Visio exporter and writes workspace QA artifacts."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "AI-FDE VSDX Radar requires local filesystem access to VSDX files and .aifde artifacts."
+    }
+  },
+  "activationEvents": [
+    "onCommand:aiFdeVsdxRadar.exportPreview",
+    "onCommand:aiFdeVsdxRadar.runQa",
+    "onCommand:aiFdeVsdxRadar.exportAndQa",
+    "onCommand:aiFdeVsdxRadar.openPreview",
+    "onCommand:aiFdeVsdxRadar.openAllPreviews",
+    "onCommand:aiFdeVsdxRadar.openQaReport",
+    "onCommand:aiFdeVsdxRadar.showStatus",
+    "onCommand:aiFdeVsdxRadar.revealArtifacts",
+    "onCommand:aiFdeVsdxRadar.generateWorkspaceReport",
+    "onCommand:aiFdeVsdxRadar.generateWorkspaceRiskReport",
+    "onCommand:aiFdeVsdxRadar.generateWorkspaceDueRiskReport",
+    "onCommand:aiFdeVsdxRadar.exportWorkspaceDueRiskCalendar",
+    "onCommand:aiFdeVsdxRadar.showWorkspaceDueRiskReminder",
+    "onCommand:aiFdeVsdxRadar.generateWorkspaceTeamBoard",
+    "onCommand:aiFdeVsdxRadar.generateDemoPack",
+    "onCommand:aiFdeVsdxRadar.generateQaConfigTemplate",
+    "onCommand:aiFdeVsdxRadar.generateQaProfileStrategyTemplate",
+    "onCommand:aiFdeVsdxRadar.exportQaConfig",
+    "onCommand:aiFdeVsdxRadar.importQaConfig",
+    "onCommand:aiFdeVsdxRadar.generateQaConfigDiffReport",
+    "onCommand:aiFdeVsdxRadar.rollbackQaConfig",
+    "onCommand:aiFdeVsdxRadar.applyQaConfigProfile",
+    "onCommand:aiFdeVsdxRadar.applyQaConfigProfileStack",
+    "onCommand:aiFdeVsdxRadar.applyQaProfileStrategy",
+    "onCommand:aiFdeVsdxRadar.openQaProfileAuditReport",
+    "onCommand:aiFdeVsdxRadar.openWorkspaceRiskDashboard",
+    "onCommand:aiFdeVsdxRadar.openHighestPriorityRisk",
+    "onCommand:aiFdeVsdxRadar.openNextDueRisk",
+    "onCommand:aiFdeVsdxRadar.openAllRiskReports",
+    "workspaceContains:**/*.vsdx"
+  ],
+  "main": "./dist-bundle/extension.js",
+  "scripts": {
+    "bundle": "node ./scripts/esbuild.mjs",
+    "acceptance": "pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/acceptance-check.ps1",
+    "compile": "tsc -p ./",
+    "demo:pack": "pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/generate-demo-pack.ps1",
+    "demo:pack:check": "pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/check-demo-pack.ps1",
+    "demo:pack:check:strict": "pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/check-demo-pack.ps1 -RequireCurrentAcceptance",
+    "marketplace:assets": "pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/generate-marketplace-assets.ps1",
+    "marketplace:check": "pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/check-marketplace.ps1",
+    "package": "npm run marketplace:assets && npm run marketplace:check && vsce package --allow-missing-repository --no-dependencies",
+    "qa:evidence": "npm run compile && node ./dist/test/generateQaEvidence.js",
+    "smoke:visio": "pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -STA -File ./scripts/smoke-visio-export.ps1",
+    "smoke:visio:multipage": "pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -STA -File ./scripts/smoke-visio-multipage-export.ps1",
+    "test:qa": "npm run compile && node ./dist/test/runQaFixture.js",
+    "test:qa:visio": "npm run compile && node ./dist/test/runVisioQaSmoke.js",
+    "verify": "npm run test:qa && npm run smoke:visio && npm run smoke:visio:multipage && npm run test:qa:visio",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile && npm run bundle -- --production"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^5.2.5",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.6.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.8.3"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "aiFdeVsdxRadar.exportPreview",
+        "title": "AI-FDE: Export VSDX Preview"
+      },
+      {
+        "command": "aiFdeVsdxRadar.runQa",
+        "title": "AI-FDE: Run VSDX QA"
+      },
+      {
+        "command": "aiFdeVsdxRadar.exportAndQa",
+        "title": "AI-FDE: Export Preview and QA"
+      },
+      {
+        "command": "aiFdeVsdxRadar.openPreview",
+        "title": "AI-FDE: Open VSDX Preview"
+      },
+      {
+        "command": "aiFdeVsdxRadar.openAllPreviews",
+        "title": "AI-FDE: Open All VSDX Previews"
+      },
+      {
+        "command": "aiFdeVsdxRadar.openQaReport",
+        "title": "AI-FDE: Open VSDX QA Report"
+      },
+      {
+        "command": "aiFdeVsdxRadar.showStatus",
+        "title": "AI-FDE: Show VSDX Status"
+      },
+      {
+        "command": "aiFdeVsdxRadar.revealArtifacts",
+        "title": "AI-FDE: Reveal VSDX Artifacts"
+      },
+      {
+        "command": "aiFdeVsdxRadar.generateWorkspaceReport",
+        "title": "AI-FDE: Generate Workspace VSDX Report"
+      },
+      {
+        "command": "aiFdeVsdxRadar.generateWorkspaceRiskReport",
+        "title": "AI-FDE: Generate Workspace VSDX Risk Report"
+      },
+      {
+        "command": "aiFdeVsdxRadar.generateWorkspaceDueRiskReport",
+        "title": "AI-FDE: Generate Workspace Due VSDX Risk Report"
+      },
+      {
+        "command": "aiFdeVsdxRadar.exportWorkspaceDueRiskCalendar",
+        "title": "AI-FDE: Export Workspace Due VSDX Risk Calendar"
+      },
+      {
+        "command": "aiFdeVsdxRadar.showWorkspaceDueRiskReminder",
+        "title": "AI-FDE: Show Workspace Due VSDX Risk Reminder"
+      },
+      {
+        "command": "aiFdeVsdxRadar.generateWorkspaceTeamBoard",
+        "title": "AI-FDE: Generate Workspace VSDX Team Review Board"
+      },
+      {
+        "command": "aiFdeVsdxRadar.generateDemoPack",
+        "title": "AI-FDE: Generate VSDX Demo Pack"
+      },
+      {
+        "command": "aiFdeVsdxRadar.generateQaConfigTemplate",
+        "title": "AI-FDE: Generate QA Config Template"
+      },
+      {
+        "command": "aiFdeVsdxRadar.generateQaProfileStrategyTemplate",
+        "title": "AI-FDE: Generate QA Profile Strategy Template"
+      },
+      {
+        "command": "aiFdeVsdxRadar.exportQaConfig",
+        "title": "AI-FDE: Export QA Config"
+      },
+      {
+        "command": "aiFdeVsdxRadar.importQaConfig",
+        "title": "AI-FDE: Import QA Config"
+      },
+      {
+        "command": "aiFdeVsdxRadar.generateQaConfigDiffReport",
+        "title": "AI-FDE: Generate QA Config Diff Report"
+      },
+      {
+        "command": "aiFdeVsdxRadar.rollbackQaConfig",
+        "title": "AI-FDE: Roll Back QA Config"
+      },
+      {
+        "command": "aiFdeVsdxRadar.applyQaConfigProfile",
+        "title": "AI-FDE: Apply QA Config Profile"
+      },
+      {
+        "command": "aiFdeVsdxRadar.applyQaConfigProfileStack",
+        "title": "AI-FDE: Apply QA Config Profile Stack"
+      },
+      {
+        "command": "aiFdeVsdxRadar.applyQaProfileStrategy",
+        "title": "AI-FDE: Apply QA Profile Strategy"
+      },
+      {
+        "command": "aiFdeVsdxRadar.openQaProfileAuditReport",
+        "title": "AI-FDE: Open QA Profile Audit Report"
+      },
+      {
+        "command": "aiFdeVsdxRadar.openWorkspaceRiskDashboard",
+        "title": "AI-FDE: Open Workspace VSDX Risk Dashboard"
+      },
+      {
+        "command": "aiFdeVsdxRadar.openHighestPriorityRisk",
+        "title": "AI-FDE: Open Highest Priority VSDX Risk"
+      },
+      {
+        "command": "aiFdeVsdxRadar.openNextDueRisk",
+        "title": "AI-FDE: Open Next Due VSDX Risk"
+      },
+      {
+        "command": "aiFdeVsdxRadar.openAllRiskReports",
+        "title": "AI-FDE: Open All VSDX Risk Reports"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "aiFdeVsdxRadar.exportAndQa",
+          "when": "resourceExtname == .vsdx",
+          "group": "navigation@20"
+        },
+        {
+          "command": "aiFdeVsdxRadar.exportPreview",
+          "when": "resourceExtname == .vsdx",
+          "group": "navigation@21"
+        },
+        {
+          "command": "aiFdeVsdxRadar.runQa",
+          "when": "resourceExtname == .vsdx",
+          "group": "navigation@22"
+        },
+        {
+          "command": "aiFdeVsdxRadar.openPreview",
+          "when": "resourceExtname == .vsdx",
+          "group": "navigation@23"
+        },
+        {
+          "command": "aiFdeVsdxRadar.openAllPreviews",
+          "when": "resourceExtname == .vsdx",
+          "group": "navigation@24"
+        },
+        {
+          "command": "aiFdeVsdxRadar.openQaReport",
+          "when": "resourceExtname == .vsdx",
+          "group": "navigation@25"
+        },
+        {
+          "command": "aiFdeVsdxRadar.showStatus",
+          "when": "resourceExtname == .vsdx",
+          "group": "navigation@26"
+        },
+        {
+          "command": "aiFdeVsdxRadar.revealArtifacts",
+          "when": "resourceExtname == .vsdx",
+          "group": "navigation@27"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "AI-FDE VSDX Radar",
+      "properties": {
+        "aiFdeVsdxRadar.pwshPath": {
+          "type": "string",
+          "default": "pwsh",
+          "description": "PowerShell 7.6.2 executable path used to run the Visio exporter."
+        },
+        "aiFdeVsdxRadar.outputDirectory": {
+          "type": "string",
+          "default": ".aifde",
+          "description": "Workspace-relative directory for preview, QA, and cache artifacts."
+        },
+        "aiFdeVsdxRadar.previewFormat": {
+          "type": "string",
+          "enum": [
+            "png",
+            "pdf"
+          ],
+          "default": "png",
+          "description": "Preview format exported by Visio COM."
+        },
+        "aiFdeVsdxRadar.qaPreset": {
+          "type": "string",
+          "enum": [
+            "custom",
+            "balanced",
+            "strict",
+            "quiet"
+          ],
+          "default": "custom",
+          "description": "QA rule preset. Use custom to honor individual threshold and warning settings."
+        },
+        "aiFdeVsdxRadar.autoExportOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically export a preview and QA JSON when a VSDX file changes."
+        },
+        "aiFdeVsdxRadar.exportTimeoutMs": {
+          "type": "number",
+          "default": 120000,
+          "minimum": 10000,
+          "description": "Timeout for the PowerShell Visio export process."
+        },
+        "aiFdeVsdxRadar.shapeDensityWarningThreshold": {
+          "type": "number",
+          "default": 80,
+          "minimum": 1,
+          "description": "Shape count threshold that marks a page as visually dense."
+        },
+        "aiFdeVsdxRadar.connectorRatioWarningThreshold": {
+          "type": "number",
+          "default": 0.25,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Minimum connector-to-shape ratio before a page is marked as low-connectivity."
+        },
+        "aiFdeVsdxRadar.pageCoverageLowWarningThreshold": {
+          "type": "number",
+          "default": 0.02,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Minimum page coverage ratio before a page is marked as sparse."
+        },
+        "aiFdeVsdxRadar.pageCoverageHighWarningThreshold": {
+          "type": "number",
+          "default": 0.85,
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Maximum page coverage ratio before a page is marked as crowded."
+        },
+        "aiFdeVsdxRadar.enableShapeDensityWarning": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable warnings for visually dense pages."
+        },
+        "aiFdeVsdxRadar.enableConnectorRatioWarning": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable warnings for low connector-to-shape ratio."
+        },
+        "aiFdeVsdxRadar.enableUnlabeledShapeWarning": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable warnings for unlabeled non-connector shapes."
+        },
+        "aiFdeVsdxRadar.enablePageCoverageWarning": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable warnings for sparse or crowded page coverage."
+        },
+        "aiFdeVsdxRadar.enableDiagonalConnectorWarning": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable warnings for diagonal connector segments."
+        },
+        "aiFdeVsdxRadar.enableConnectorCrossingWarning": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable warnings for connector segments that cross non-connector shapes."
+        },
+        "aiFdeVsdxRadar.enableDanglingConnectorWarning": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable warnings for connector shapes that have no Connects relationship evidence."
+        },
+        "aiFdeVsdxRadar.enableShapeOverlapWarning": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable warnings for overlapping non-connector shapes."
+        }
+      }
+    }
+  }
+}

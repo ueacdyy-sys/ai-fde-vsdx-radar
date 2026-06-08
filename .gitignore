@@ -1,0 +1,6 @@
+node_modules/
+dist/
+dist-bundle/
+.vscode-test/
+*.vsix
+.aifde/

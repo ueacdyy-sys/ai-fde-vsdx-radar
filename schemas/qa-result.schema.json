@@ -1,0 +1,242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.ai-fde/schemas/vsdx-qa-result.schema.json",
+  "title": "AI-FDE VSDX QA Result",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "sourcePath",
+    "generatedAt",
+    "previewExists",
+    "previewFresh",
+    "stats",
+    "pages",
+    "risks"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "sourcePath": {
+      "type": "string"
+    },
+    "sourceMtimeMs": {
+      "type": "number"
+    },
+    "sourceModifiedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "previewPath": {
+      "type": "string"
+    },
+    "previewPaths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "previewExists": {
+      "type": "boolean"
+    },
+    "previewFresh": {
+      "type": "boolean"
+    },
+    "previewFreshnessReasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "stats": {
+      "type": "object",
+      "required": [
+        "pageCount",
+        "shapeCount",
+        "textShapeCount",
+        "unlabeledShapeCount",
+        "oneDShapeCount",
+        "connectCount",
+        "duplicateShapeIdCount",
+        "outOfBoundsShapeCount",
+        "diagonalConnectorCount",
+        "connectorCrossingCount",
+        "danglingConnectorCount",
+        "straightConnectorCount",
+        "orthogonalConnectorCount",
+        "complexConnectorCount",
+        "shapeOverlapPairCount"
+      ],
+      "properties": {
+        "pageCount": {
+          "type": "number"
+        },
+        "shapeCount": {
+          "type": "number"
+        },
+        "textShapeCount": {
+          "type": "number"
+        },
+        "unlabeledShapeCount": {
+          "type": "number"
+        },
+        "oneDShapeCount": {
+          "type": "number"
+        },
+        "connectCount": {
+          "type": "number"
+        },
+        "duplicateShapeIdCount": {
+          "type": "number"
+        },
+        "outOfBoundsShapeCount": {
+          "type": "number"
+        },
+        "diagonalConnectorCount": {
+          "type": "number"
+        },
+        "connectorCrossingCount": {
+          "type": "number"
+        },
+        "danglingConnectorCount": {
+          "type": "number"
+        },
+        "straightConnectorCount": {
+          "type": "number"
+        },
+        "orthogonalConnectorCount": {
+          "type": "number"
+        },
+        "complexConnectorCount": {
+          "type": "number"
+        },
+        "shapeOverlapPairCount": {
+          "type": "number"
+        },
+        "averagePageCoverageRatio": {
+          "type": "number"
+        }
+      }
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "entry",
+          "shapeCount",
+          "textShapeCount",
+          "unlabeledShapeCount",
+          "oneDShapeCount",
+          "connectCount",
+          "duplicateShapeIdCount",
+          "outOfBoundsShapeCount",
+          "diagonalConnectorCount",
+          "connectorCrossingCount",
+          "danglingConnectorCount",
+          "straightConnectorCount",
+          "orthogonalConnectorCount",
+          "complexConnectorCount",
+          "shapeOverlapPairCount",
+          "riskCount"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "entry": {
+            "type": "string"
+          },
+          "width": {
+            "type": "number"
+          },
+          "height": {
+            "type": "number"
+          },
+          "shapeCount": {
+            "type": "number"
+          },
+          "textShapeCount": {
+            "type": "number"
+          },
+          "unlabeledShapeCount": {
+            "type": "number"
+          },
+          "oneDShapeCount": {
+            "type": "number"
+          },
+          "connectCount": {
+            "type": "number"
+          },
+          "duplicateShapeIdCount": {
+            "type": "number"
+          },
+          "outOfBoundsShapeCount": {
+            "type": "number"
+          },
+          "diagonalConnectorCount": {
+            "type": "number"
+          },
+          "connectorCrossingCount": {
+            "type": "number"
+          },
+          "danglingConnectorCount": {
+            "type": "number"
+          },
+          "straightConnectorCount": {
+            "type": "number"
+          },
+          "orthogonalConnectorCount": {
+            "type": "number"
+          },
+          "complexConnectorCount": {
+            "type": "number"
+          },
+          "shapeOverlapPairCount": {
+            "type": "number"
+          },
+          "pageCoverageRatio": {
+            "type": "number"
+          },
+          "riskCount": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "severity",
+          "code",
+          "message"
+        ],
+        "properties": {
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "error"
+            ]
+          },
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "page": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
