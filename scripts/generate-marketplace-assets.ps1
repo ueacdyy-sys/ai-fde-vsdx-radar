@@ -98,8 +98,8 @@ function New-MarketplacePreview {
         $monoFont = [System.Drawing.Font]::new('Consolas', 17, [System.Drawing.FontStyle]::Regular, [System.Drawing.GraphicsUnit]::Pixel)
 
         $g.FillRectangle($navy, 0, 0, 1280, 112)
-        $g.DrawString('AI-FDE VSDX Radar', $titleFont, [System.Drawing.Brushes]::White, 48, 28)
-        $g.DrawString('Preview cache + Visio QA linter for VS Code', $bodyFont, $accent, 560, 50)
+        $g.DrawString('Visio VSDX Preview & QA', $titleFont, [System.Drawing.Brushes]::White, 48, 28)
+        $g.DrawString('Preview cache + QA linter for VS Code', $bodyFont, $accent, 680, 50)
 
         $g.FillRectangle($panel, 48, 152, 366, 480)
         $g.DrawRectangle($border, 48, 152, 366, 480)

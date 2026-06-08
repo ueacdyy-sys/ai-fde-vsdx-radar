@@ -1,7 +1,7 @@
 {
   "name": "ai-fde-vsdx-radar",
-  "displayName": "AI-FDE VSDX Radar",
-  "description": "Preview cache, QA linter, and review dashboard for Microsoft Visio VSDX files.",
+  "displayName": "Visio VSDX Preview & QA Linter",
+  "description": "Preview, lint, and review Microsoft Visio VSDX files in VS Code.",
   "version": "0.1.0",
   "publisher": "ai-fde-lab",
   "license": "SEE LICENSE IN LICENSE.txt",
@@ -47,11 +47,11 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": false,
-      "description": "AI-FDE VSDX Radar executes a local PowerShell Visio exporter and writes workspace QA artifacts."
+      "description": "Visio VSDX Preview & QA Linter executes a local PowerShell Visio exporter and writes workspace QA artifacts."
     },
     "virtualWorkspaces": {
       "supported": false,
-      "description": "AI-FDE VSDX Radar requires local filesystem access to VSDX files and .aifde artifacts."
+      "description": "Visio VSDX Preview & QA Linter requires local filesystem access to VSDX files and .aifde artifacts."
     }
   },
   "activationEvents": [
@@ -281,7 +281,7 @@
       ]
     },
     "configuration": {
-      "title": "AI-FDE VSDX Radar",
+      "title": "Visio VSDX Preview & QA Linter",
       "properties": {
         "aiFdeVsdxRadar.pwshPath": {
           "type": "string",

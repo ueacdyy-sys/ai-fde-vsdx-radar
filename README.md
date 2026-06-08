@@ -1,8 +1,8 @@
-# AI-FDE VSDX Radar
+# Visio VSDX Preview & QA Linter
 
-AI-FDE VSDX Radar brings Microsoft Visio `.vsdx` review into VS Code: export local previews, lint diagram structure, and collect review evidence without leaving the editor.
+Visio VSDX Preview & QA Linter brings Microsoft Visio `.vsdx` review into VS Code: export local previews, lint diagram structure, and collect review evidence without leaving the editor.
 
-![AI-FDE VSDX Radar preview](images/marketplace-preview.png)
+![Visio VSDX Preview and QA Linter preview](images/marketplace-preview.png)
 
 ## What It Does
 
