@@ -38,9 +38,6 @@ jobs:
       - name: Run QA fixture tests
         run: npm run test:qa
 
-      - name: Generate QA evidence
-        run: npm run qa:evidence
-
       - name: Check Marketplace metadata
         run: npm run marketplace:check
 
