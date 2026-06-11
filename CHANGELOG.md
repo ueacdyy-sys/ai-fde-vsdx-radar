@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.7 - 2026-06-11
+
+### Added
+
+- Expanded child shapes from composite VSDX masters into the interactive editor preview when page instances do not contain their own child shape XML.
+- Scaled inherited master child shapes into the page instance coordinate system, including width, height, and text-bearing child shapes.
+- Marked expanded master child shapes as read-only preview objects so they do not enter the page-shape write-back path.
+
 ## 0.1.6 - 2026-06-11
 
 ### Added

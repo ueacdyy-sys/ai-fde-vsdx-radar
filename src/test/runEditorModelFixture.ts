@@ -9,6 +9,7 @@ async function main(): Promise<void> {
   await verifiesAdvancedGeometryRows();
   await verifiesFormulaGeometryAndMasterRowInheritance();
   await verifiesColorFormulaAndNoPaint();
+  await verifiesMasterChildShapeExpansion();
   await verifiesConnectorGeometryRows();
   await verifiesMasterFallbackWhenPageGeometryIsIncomplete();
   await verifiesEmbeddedImageRelationship();
@@ -243,6 +244,70 @@ async function verifiesColorFormulaAndNoPaint(): Promise<void> {
   assert.strictEqual(styled?.line, '#c81020');
   assert.strictEqual(noPaint?.fill, 'none');
   assert.strictEqual(noPaint?.line, 'none');
+}
+
+async function verifiesMasterChildShapeExpansion(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/masters/masters.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<Masters xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <Master ID="2" NameU="Composite"><Rel r:id="rId1"/></Master>
+</Masters>`);
+  zip.file('visio/masters/_rels/masters.xml.rels', `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.microsoft.com/visio/2010/relationships/master" Target="master1.xml"/>
+</Relationships>`);
+  zip.file('visio/masters/master1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<MasterContents>
+  <Shapes>
+    <Shape ID="5">
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="PinX" V="1"/>
+      <Cell N="PinY" V="0.5"/>
+      <Cell N="LocPinX" V="1"/>
+      <Cell N="LocPinY" V="0.5"/>
+      <Shapes>
+        <Shape ID="7" NameU="InnerLabel">
+          <Cell N="PinX" V="0.5"/>
+          <Cell N="PinY" V="0.5"/>
+          <Cell N="Width" V="0.5"/>
+          <Cell N="Height" V="0.25"/>
+          <Text>Inner</Text>
+          <Section N="Geometry" IX="0">
+            <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+            <Row T="LineTo" IX="2"><Cell N="X" V="0.5"/><Cell N="Y" V="0"/></Row>
+            <Row T="LineTo" IX="3"><Cell N="X" V="0.5"/><Cell N="Y" V="0.25"/></Row>
+          </Section>
+        </Shape>
+      </Shapes>
+    </Shape>
+  </Shapes>
+</MasterContents>`);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Composite" Master="2">
+      <Cell N="PinX" V="5"/>
+      <Cell N="PinY" V="5"/>
+      <Cell N="Width" V="4"/>
+      <Cell N="Height" V="2"/>
+      <Cell N="LocPinX" V="2"/>
+      <Cell N="LocPinY" V="1"/>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'master-child-fixture.vsdx');
+  const child = diagram.pages[0]?.shapes.find(shape => shape.id === '1/master/7');
+  assert.ok(child, 'expected inherited master child shape to be expanded');
+  assert.strictEqual(child.text, 'Inner');
+  assert.strictEqual(child.editable, false);
+  assert.ok(child.reason?.includes('Inherited master sub-shape'), 'expected virtual master child to be read-only');
+  assert.ok(Math.abs((child.x ?? 0) - 3.5) < 0.0001, 'expected child x to be scaled into page coordinates');
+  assert.ok(Math.abs((child.y ?? 0) - 4.75) < 0.0001, 'expected child y to be scaled into page coordinates');
+  assert.ok(Math.abs((child.width ?? 0) - 1) < 0.0001, 'expected child width to be scaled');
+  assert.ok(Math.abs((child.height ?? 0) - 0.5) < 0.0001, 'expected child height to be scaled');
 }
 
 async function verifiesMasterFallbackWhenPageGeometryIsIncomplete(): Promise<void> {

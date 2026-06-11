@@ -106,6 +106,7 @@ interface EditorShapeContext {
   modelId: string;
   masterShapes: Map<string, any>;
   imageDataUriByRelId: Map<string, string>;
+  readOnlyReason?: string;
 }
 
 export async function readVsdxDiagramFromFile(filePath: string): Promise<{ bytes: Buffer; diagram: VsdxEditorDiagram }> {
@@ -250,6 +251,7 @@ function collectEditorShapes(
     }
 
     const pageShape = parentTransform ? transformShapeCoordinates(shape, parentTransform) : shape;
+    const masterShape = readMasterShapeFor(shape, context.masterShapes);
     const editorShape = toEditorShape(pageShape, {
       ...context,
       modelId
@@ -262,6 +264,23 @@ function collectEditorShapes(
     if (childShapes.length > 0) {
       const childTransform = createLocalToPageTransform(shape, parentTransform);
       collected.push(...collectEditorShapes(childShapes, context, modelId, childTransform));
+      return;
+    }
+
+    const masterChildShapes = toArray(masterShape?.Shapes?.Shape);
+    if (masterChildShapes.length > 0) {
+      const masterTransform = createMasterToPageTransform(pageShape, masterShape);
+      if (masterTransform) {
+        collected.push(...collectEditorShapes(
+          masterChildShapes,
+          {
+            ...context,
+            readOnlyReason: 'Inherited master sub-shape is shown for preview and is not written back as a page shape.'
+          },
+          `${modelId}/master`,
+          masterTransform
+        ));
+      }
     }
   });
 
@@ -283,6 +302,7 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const isConnector = isConnectorShape(shape);
   const text = readShapeText(shape) || readShapeText(masterShape);
   const imageDataUri = readShapeImageDataUri(shape, context.imageDataUriByRelId);
+  const readOnlyReason = context.readOnlyReason;
   const base = {
     id,
     name: String(shape?.Name ?? shape?.NameU ?? masterShape?.Name ?? masterShape?.NameU ?? id),
@@ -304,12 +324,12 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     const geometryPath = width !== undefined && height !== undefined
       ? compileGeometryPath(shape, masterShape, width, height)
       : undefined;
-    const editable = [beginX, beginY, endX, endY].every(value => value !== undefined) && !hasChildShapes;
+    const editable = !readOnlyReason && [beginX, beginY, endX, endY].every(value => value !== undefined) && !hasChildShapes;
     return {
       ...base,
       kind: 'connector',
       editable,
-      reason: editable ? undefined : 'Connector endpoints are incomplete or nested.',
+      reason: editable ? undefined : readOnlyReason ?? 'Connector endpoints are incomplete or nested.',
       beginX,
       beginY,
       endX,
@@ -329,14 +349,15 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const geometryPath = width !== undefined && height !== undefined
     ? compileGeometryPath(shape, masterShape, width, height)
     : undefined;
-  const editable = [pinX, pinY, width, height].every(value => value !== undefined)
+  const editable = !readOnlyReason
+    && [pinX, pinY, width, height].every(value => value !== undefined)
     && Math.abs(angle) < 0.0001
     && !hasChildShapes;
   return {
     ...base,
     kind: 'shape',
     editable,
-    reason: editable ? undefined : 'Shape uses rotation, grouping, or incomplete geometry.',
+    reason: editable ? undefined : readOnlyReason ?? 'Shape uses rotation, grouping, or incomplete geometry.',
     x: pinX !== undefined && width !== undefined ? pinX - width / 2 : undefined,
     y: pinY !== undefined && height !== undefined ? pinY - height / 2 : undefined,
     width,
@@ -1526,6 +1547,28 @@ function createLocalToPageTransform(shape: any, parentTransform?: PointTransform
         y: pinY! + localX * sin + localY * cos
       };
       return parentTransform ? parentTransform.toPage(parentPoint) : parentPoint;
+    }
+  };
+}
+
+function createMasterToPageTransform(instanceShape: any, masterShape: any): PointTransform | undefined {
+  const instanceCells = toArray(instanceShape?.Cell);
+  const masterCells = toArray(masterShape?.Cell);
+  const instanceWidth = readCellNumber(instanceCells, 'Width') ?? readCellNumber(masterCells, 'Width');
+  const instanceHeight = readCellNumber(instanceCells, 'Height') ?? readCellNumber(masterCells, 'Height');
+  const masterWidth = readCellNumber(masterCells, 'Width') ?? instanceWidth;
+  const masterHeight = readCellNumber(masterCells, 'Height') ?? instanceHeight;
+  const instanceTransform = createLocalToPageTransform(instanceShape);
+  if (!instanceTransform || !instanceWidth || !instanceHeight || !masterWidth || !masterHeight) {
+    return undefined;
+  }
+
+  return {
+    toPage(point: Point): Point {
+      return instanceTransform.toPage({
+        x: point.x * (instanceWidth / masterWidth),
+        y: point.y * (instanceHeight / masterHeight)
+      });
     }
   };
 }
