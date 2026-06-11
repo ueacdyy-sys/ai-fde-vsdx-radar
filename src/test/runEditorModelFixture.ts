@@ -8,6 +8,7 @@ async function main(): Promise<void> {
   await verifiesCurvedGeometryRows();
   await verifiesAdvancedGeometryRows();
   await verifiesFormulaGeometryAndMasterRowInheritance();
+  await verifiesColorFormulaAndNoPaint();
   await verifiesConnectorGeometryRows();
   await verifiesMasterFallbackWhenPageGeometryIsIncomplete();
   await verifiesEmbeddedImageRelationship();
@@ -189,6 +190,59 @@ async function verifiesFormulaGeometryAndMasterRowInheritance(): Promise<void> {
   const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'formula-inheritance-fixture.vsdx');
   const geometryPath = diagram.pages[0]?.shapes[0]?.geometryPath ?? '';
   assert.strictEqual(geometryPath, 'M 2 4 L 6 2 L 8 0');
+}
+
+async function verifiesColorFormulaAndNoPaint(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/masters/masters.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<Masters xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <Master ID="2" NameU="Styled"><Rel r:id="rId1"/></Master>
+</Masters>`);
+  zip.file('visio/masters/_rels/masters.xml.rels', `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.microsoft.com/visio/2010/relationships/master" Target="master1.xml"/>
+</Relationships>`);
+  zip.file('visio/masters/master1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<MasterContents>
+  <Shapes>
+    <Shape ID="5">
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="FillForegnd" V="0" F="THEMEGUARD(RGB(17,34,51))"/>
+      <Cell N="LineColor" V="0" F="RGB(200,16,32)"/>
+      <Section N="Geometry" IX="0">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" V="2"/><Cell N="Y" V="0"/></Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</MasterContents>`);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Styled" Master="2">
+      <Cell N="PinX" V="2"/>
+      <Cell N="PinY" V="2"/>
+    </Shape>
+    <Shape ID="2" NameU="NoPaint">
+      <Cell N="PinX" V="5"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="FillPattern" V="0"/>
+      <Cell N="LinePattern" V="0"/>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'style-fixture.vsdx');
+  const styled = diagram.pages[0]?.shapes[0];
+  const noPaint = diagram.pages[0]?.shapes[1];
+  assert.strictEqual(styled?.fill, '#112233');
+  assert.strictEqual(styled?.line, '#c81020');
+  assert.strictEqual(noPaint?.fill, 'none');
+  assert.strictEqual(noPaint?.line, 'none');
 }
 
 async function verifiesMasterFallbackWhenPageGeometryIsIncomplete(): Promise<void> {

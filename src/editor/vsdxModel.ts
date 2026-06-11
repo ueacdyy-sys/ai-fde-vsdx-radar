@@ -287,8 +287,8 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     id,
     name: String(shape?.Name ?? shape?.NameU ?? masterShape?.Name ?? masterShape?.NameU ?? id),
     text,
-    fill: readCellString(cells, 'FillForegnd') ?? readCellString(masterCells, 'FillForegnd') ?? '#ffffff',
-    line: readCellString(cells, 'LineColor') ?? readCellString(masterCells, 'LineColor') ?? '#586069',
+    fill: readFillColor(cells, masterCells),
+    line: readLineColor(cells, masterCells),
     strokeWidth: Math.max(0.015, lineWeight ?? 0.02)
   };
 
@@ -559,6 +559,61 @@ function readCellNumber(cells: unknown[], name: string): number | undefined {
 function readCellString(cells: unknown[], name: string): string | undefined {
   const cell = cells.find((candidate: any) => candidate?.N === name) as any;
   return typeof cell?.V === 'string' && cell.V.trim().length > 0 ? cell.V : undefined;
+}
+
+function readFillColor(cells: unknown[], masterCells: unknown[]): string {
+  const fillPattern = readCellNumber(cells, 'FillPattern') ?? readCellNumber(masterCells, 'FillPattern');
+  if (fillPattern === 0) {
+    return 'none';
+  }
+  return readColorCell(cells, 'FillForegnd')
+    ?? readColorCell(masterCells, 'FillForegnd')
+    ?? '#ffffff';
+}
+
+function readLineColor(cells: unknown[], masterCells: unknown[]): string {
+  const linePattern = readCellNumber(cells, 'LinePattern') ?? readCellNumber(masterCells, 'LinePattern');
+  if (linePattern === 0) {
+    return 'none';
+  }
+  return readColorCell(cells, 'LineColor')
+    ?? readColorCell(masterCells, 'LineColor')
+    ?? '#586069';
+}
+
+function readColorCell(cells: unknown[], name: string): string | undefined {
+  const cell = cells.find((candidate: any) => candidate?.N === name) as any;
+  if (!cell) {
+    return undefined;
+  }
+  return normalizeColor(cell.V) ?? normalizeColor(cell.F);
+}
+
+function normalizeColor(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  const hex = trimmed.match(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/);
+  if (hex) {
+    const normalized = hex[1].length === 3
+      ? hex[1].split('').map(part => part + part).join('')
+      : hex[1].slice(0, 6);
+    return `#${normalized.toLowerCase()}`;
+  }
+
+  const rgb = trimmed.match(/RGB\s*\(\s*([^)]+)\)/i);
+  if (rgb) {
+    const parts = rgb[1].split(',').map(part => Number(part.trim()));
+    if (parts.length >= 3 && parts.slice(0, 3).every(part => Number.isFinite(part))) {
+      return `#${parts.slice(0, 3).map(toHexByte).join('')}`;
+    }
+  }
+  return undefined;
+}
+
+function toHexByte(value: number): string {
+  return Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, '0');
 }
 
 function readCellFormula(cells: unknown[], name: string): string | undefined {

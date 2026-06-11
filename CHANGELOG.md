@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.6 - 2026-06-11
+
+### Added
+
+- Normalized VSDX color cells from hex values and `RGB(...)` / `THEMEGUARD(RGB(...))` formulas into webview-safe `#rrggbb` colors.
+- Honored `FillPattern=0` and `LinePattern=0` as `none` so no-fill and no-line shapes are not rendered with fallback colors.
+- Added editor model regression coverage for inherited master colors, RGB formula colors, and no-paint shapes.
+
 ## 0.1.5 - 2026-06-11
 
 ### Added
