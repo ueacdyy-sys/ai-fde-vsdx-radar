@@ -76,15 +76,26 @@ interface Point {
 
 interface GeometrySource {
   cells: any[];
+  allSections: any[];
   sections: any[];
+  sourceWidth?: number;
+  sourceHeight?: number;
 }
 
 interface GeometryContext {
   targetWidth: number;
   targetHeight: number;
+  sourceWidth: number;
+  sourceHeight: number;
   scaleX: number;
   scaleY: number;
   scaleAverage: number;
+  refs: Map<string, number>;
+}
+
+interface FormulaToken {
+  type: 'number' | 'identifier' | 'operator' | 'paren' | 'comma';
+  value: string;
 }
 
 interface PointTransform {
@@ -576,6 +587,7 @@ function readShapeImageDataUri(shape: any, imageDataUriByRelId: Map<string, stri
 
 function compileGeometryPath(shape: any, masterShape: any, targetWidth: number, targetHeight: number): string | undefined {
   const candidates = [
+    ...mergedGeometrySourcesFor(shape, masterShape, targetWidth, targetHeight),
     ...geometrySourcesFor(shape),
     ...geometrySourcesFor(masterShape)
   ];
@@ -591,8 +603,8 @@ function compileGeometryPath(shape: any, masterShape: any, targetWidth: number, 
 }
 
 function compileGeometrySource(source: GeometrySource, targetWidth: number, targetHeight: number): string | undefined {
-  const sourceWidth = readCellNumber(source.cells, 'Width') ?? targetWidth;
-  const sourceHeight = readCellNumber(source.cells, 'Height') ?? targetHeight;
+  const sourceWidth = source.sourceWidth ?? readCellNumber(source.cells, 'Width') ?? targetWidth;
+  const sourceHeight = source.sourceHeight ?? readCellNumber(source.cells, 'Height') ?? targetHeight;
   if (sourceWidth <= 0 || sourceHeight <= 0 || targetWidth <= 0 || targetHeight <= 0) {
     return undefined;
   }
@@ -600,9 +612,12 @@ function compileGeometrySource(source: GeometrySource, targetWidth: number, targ
   const context: GeometryContext = {
     targetWidth,
     targetHeight,
+    sourceWidth,
+    sourceHeight,
     scaleX: targetWidth / sourceWidth,
     scaleY: targetHeight / sourceHeight,
-    scaleAverage: (Math.abs(targetWidth / sourceWidth) + Math.abs(targetHeight / sourceHeight)) / 2
+    scaleAverage: (Math.abs(targetWidth / sourceWidth) + Math.abs(targetHeight / sourceHeight)) / 2,
+    refs: buildFormulaRefs(source, sourceWidth, sourceHeight)
   };
   const commands: string[] = [];
 
@@ -618,6 +633,7 @@ function compileGeometrySource(source: GeometrySource, targetWidth: number, targ
       const rowType = String(row?.T ?? row?.N ?? '').toLowerCase();
       const beforeLength = commands.length;
       const result = compileGeometryRow(rowType, cells, context, commands, lastPoint);
+      rememberGeometryRowRefs(section, row, cells, context);
       if (result?.firstPoint) {
         firstPoint = firstPoint ?? result.firstPoint;
       }
@@ -666,13 +682,16 @@ function compileGeometryRow(
   if (!point) {
     return undefined;
   }
-  if (rowType === 'moveto' || rowType === 'relmoveto' || commands.length === 0) {
+  if (rowType === 'moveto' || rowType === 'relmoveto') {
     commands.push(pathCommand('M', point));
     return { firstPoint: point, lastPoint: point };
   }
+  if (!lastPoint) {
+    return undefined;
+  }
   if (rowType === 'arcto' || rowType === 'relarcto') {
-    const bow = (readCellNumber(cells, 'A') ?? 0) * (relative ? (context.targetWidth + context.targetHeight) / 2 : context.scaleAverage);
-    const control = lastPoint ? arcControlPoint(lastPoint, point, bow) : point;
+    const bow = (readGeometryCellNumber(cells, 'A', context) ?? 0) * (relative ? (context.targetWidth + context.targetHeight) / 2 : context.scaleAverage);
+    const control = arcControlPoint(lastPoint, point, bow);
     commands.push(`Q ${formatPoint(control)} ${formatPoint(point)}`);
     return { lastPoint: point };
   }
@@ -709,25 +728,242 @@ function geometrySourcesFor(shape: any): GeometrySource[] {
   if (!shape) {
     return [];
   }
-  const sections = toArray(shape?.Section)
+  const allSections = toArray(shape?.Section);
+  const sections = allSections
     .filter(section => String(section?.N ?? '').toLowerCase() === 'geometry')
     .sort(sortGeometrySections);
-  return sections.length > 0 ? [{ cells: toArray(shape?.Cell), sections }] : [];
+  return sections.length > 0 ? [{ cells: toArray(shape?.Cell), allSections, sections }] : [];
+}
+
+function mergedGeometrySourcesFor(shape: any, masterShape: any, targetWidth: number, targetHeight: number): GeometrySource[] {
+  if (!shape || !masterShape) {
+    return [];
+  }
+  const pageSource = geometrySourcesFor(shape)[0];
+  const masterSource = geometrySourcesFor(masterShape)[0];
+  if (!pageSource || !masterSource) {
+    return [];
+  }
+
+  const mergedAllSections = mergeShapeSections(masterSource.allSections, pageSource.allSections);
+  const sections = mergedAllSections
+    .filter(section => String(section?.N ?? '').toLowerCase() === 'geometry')
+    .sort(sortGeometrySections);
+  return sections.length > 0
+    ? [{
+      cells: mergeCells(masterSource.cells, pageSource.cells),
+      allSections: mergedAllSections,
+      sections,
+      sourceWidth: targetWidth,
+      sourceHeight: targetHeight
+    }]
+    : [];
 }
 
 function sortGeometrySections(a: any, b: any): number {
   return cleanNumber(a?.IX, 0) - cleanNumber(b?.IX, 0);
 }
 
+function mergeShapeSections(masterSections: any[], pageSections: any[]): any[] {
+  const merged = new Map<string, any>();
+  const order: string[] = [];
+  masterSections.forEach((section, index) => {
+    const key = sectionKey(section, index);
+    merged.set(key, cloneXml(section));
+    order.push(key);
+  });
+  pageSections.forEach((section, index) => {
+    const key = sectionKey(section, index);
+    const previous = merged.get(key);
+    if (!previous) {
+      merged.set(key, cloneXml(section));
+      order.push(key);
+      return;
+    }
+    merged.set(key, mergeSection(previous, section));
+  });
+  return order.map(key => merged.get(key)).filter(isDefined);
+}
+
+function mergeSection(masterSection: any, pageSection: any): any {
+  const merged = {
+    ...cloneXml(masterSection),
+    ...cloneXml(pageSection)
+  };
+  const cells = mergeCells(toArray(masterSection?.Cell), toArray(pageSection?.Cell));
+  const rows = mergeRows(toArray(masterSection?.Row), toArray(pageSection?.Row));
+  if (cells.length > 0) {
+    merged.Cell = cells;
+  } else {
+    delete merged.Cell;
+  }
+  if (rows.length > 0) {
+    merged.Row = rows;
+  } else {
+    delete merged.Row;
+  }
+  return merged;
+}
+
+function mergeRows(masterRows: any[], pageRows: any[]): any[] {
+  const merged = new Map<string, any>();
+  const order: string[] = [];
+  masterRows.forEach((row, index) => {
+    const key = rowKey(row, index);
+    merged.set(key, cloneXml(row));
+    order.push(key);
+  });
+  pageRows.forEach((row, index) => {
+    const key = rowKey(row, index);
+    if (String(row?.Del ?? '') === '1') {
+      merged.delete(key);
+      return;
+    }
+    const previous = merged.get(key);
+    if (!previous) {
+      merged.set(key, cloneXml(row));
+      order.push(key);
+      return;
+    }
+    merged.set(key, {
+      ...cloneXml(previous),
+      ...cloneXml(row),
+      Cell: mergeCells(toArray(previous?.Cell), toArray(row?.Cell))
+    });
+  });
+  return order.map(key => merged.get(key)).filter(isDefined);
+}
+
+function mergeCells(masterCells: any[], pageCells: any[]): any[] {
+  const merged = new Map<string, any>();
+  const order: string[] = [];
+  masterCells.forEach((cell, index) => {
+    const key = cellKey(cell, index);
+    merged.set(key, cloneXml(cell));
+    order.push(key);
+  });
+  pageCells.forEach((cell, index) => {
+    const key = cellKey(cell, index);
+    if (!merged.has(key)) {
+      order.push(key);
+    }
+    merged.set(key, {
+      ...cloneXml(merged.get(key) ?? {}),
+      ...cloneXml(cell)
+    });
+  });
+  return order.map(key => merged.get(key)).filter(isDefined);
+}
+
+function sectionKey(section: any, index: number): string {
+  return `${String(section?.N ?? '')}:${String(section?.IX ?? index)}`;
+}
+
+function rowKey(row: any, index: number): string {
+  return `${String(row?.IX ?? index)}:${String(row?.N ?? row?.T ?? '')}`;
+}
+
+function cellKey(cell: any, index: number): string {
+  return String(cell?.N ?? index);
+}
+
+function cloneXml<T>(value: T): T {
+  return value === undefined ? value : JSON.parse(JSON.stringify(value));
+}
+
+function buildFormulaRefs(source: GeometrySource, sourceWidth: number, sourceHeight: number): Map<string, number> {
+  const refs = new Map<string, number>();
+  refs.set('width', sourceWidth);
+  refs.set('height', sourceHeight);
+  const context: GeometryContext = {
+    targetWidth: sourceWidth,
+    targetHeight: sourceHeight,
+    sourceWidth,
+    sourceHeight,
+    scaleX: 1,
+    scaleY: 1,
+    scaleAverage: 1,
+    refs
+  };
+  for (const cell of source.cells) {
+    if (typeof cell?.N === 'string') {
+      const value = evaluateFormula(cell.F, context) ?? Number(cell.V);
+      if (Number.isFinite(value)) {
+        refs.set(cell.N.toLowerCase(), value);
+      }
+    }
+  }
+  for (const [sectionIndex, section] of source.allSections.entries()) {
+    for (const row of toArray(section?.Row)) {
+      rememberSectionRowRefs(section, sectionIndex, row, toArray(row?.Cell), refs, context);
+    }
+  }
+  return refs;
+}
+
+function rememberGeometryRowRefs(section: any, row: any, cells: any[], context: GeometryContext): void {
+  rememberSectionRowRefs(section, cleanNumber(section?.IX, 0), row, cells, context.refs, context);
+}
+
+function rememberSectionRowRefs(
+  section: any,
+  sectionIndex: number,
+  row: any,
+  cells: any[],
+  refs: Map<string, number>,
+  context?: GeometryContext
+): void {
+  const rowNumber = rowNumberFor(row, 1);
+  const sectionNames = sectionFormulaNames(section, sectionIndex);
+  for (const cell of cells) {
+    if (typeof cell?.N !== 'string') {
+      continue;
+    }
+    const value = context ? readGeometryCellNumber(cells, cell.N, context) : Number(cell.V);
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      continue;
+    }
+    for (const sectionName of sectionNames) {
+      refs.set(`${sectionName}.${cell.N}${rowNumber}`.toLowerCase(), value);
+    }
+  }
+}
+
+function sectionFormulaNames(section: any, sectionIndex: number): string[] {
+  const name = String(section?.N ?? '');
+  if (name.toLowerCase() === 'geometry') {
+    const ix = cleanNumber(section?.IX, sectionIndex);
+    return [`Geometry${ix + 1}`, 'Geometry'];
+  }
+  return name ? [name] : [];
+}
+
+function rowNumberFor(row: any, fallback: number): number {
+  return Math.max(1, Math.trunc(cleanNumber(row?.IX, fallback)));
+}
+
+function readGeometryCellNumber(cells: any[], name: string, context: GeometryContext): number | undefined {
+  const cell = cells.find((candidate: any) => candidate?.N === name);
+  if (!cell) {
+    return undefined;
+  }
+  const formulaValue = evaluateFormula(cell.F, context);
+  if (formulaValue !== undefined) {
+    return formulaValue;
+  }
+  const value = Number(cell.V);
+  return Number.isFinite(value) ? value : undefined;
+}
+
 function readGeometryPoint(cells: any[], context: GeometryContext, relative: boolean, fallback?: Point): Point | undefined {
-  const x = readCellNumber(cells, 'X') ?? fallback?.x;
-  const y = readCellNumber(cells, 'Y') ?? fallback?.y;
+  const x = readGeometryCellNumber(cells, 'X', context) ?? fallback?.x;
+  const y = readGeometryCellNumber(cells, 'Y', context) ?? fallback?.y;
   return x !== undefined && y !== undefined ? toGeometryPoint(x, y, context, relative) : undefined;
 }
 
 function readGeometryPointPair(cells: any[], xName: string, yName: string, context: GeometryContext, relative: boolean): Point | undefined {
-  const x = readCellNumber(cells, xName);
-  const y = readCellNumber(cells, yName);
+  const x = readGeometryCellNumber(cells, xName, context);
+  const y = readGeometryCellNumber(cells, yName, context);
   return x !== undefined && y !== undefined ? toGeometryPoint(x, y, context, relative) : undefined;
 }
 
@@ -876,6 +1112,206 @@ function formatPoint(point: Point): string {
   return `${formatNumber(point.x)} ${formatNumber(point.y)}`;
 }
 
+function evaluateFormula(formula: unknown, context: GeometryContext): number | undefined {
+  if (typeof formula !== 'string') {
+    return undefined;
+  }
+  const trimmed = formula.trim();
+  if (!trimmed || /^(inh|no formula)$/i.test(trimmed)) {
+    return undefined;
+  }
+
+  const normalized = trimmed
+    .replace(/^=/, '')
+    .replace(/(\d+(?:\.\d+)?|\.\d+)(?:DL|IN|MM|CM|PT|FT)\b/gi, '$1');
+  const tokens = tokenizeFormula(normalized);
+  if (tokens.length === 0) {
+    return undefined;
+  }
+
+  let index = 0;
+  const peek = () => tokens[index];
+  const consume = () => tokens[index++];
+
+  const parseExpression = (): number | undefined => {
+    let value = parseTerm();
+    while (value !== undefined && peek()?.type === 'operator' && ['+', '-'].includes(peek().value)) {
+      const operator = consume().value;
+      const right = parseTerm();
+      if (right === undefined) {
+        return undefined;
+      }
+      value = operator === '+' ? value + right : value - right;
+    }
+    return value;
+  };
+
+  const parseTerm = (): number | undefined => {
+    let value = parseFactor();
+    while (value !== undefined && peek()?.type === 'operator' && ['*', '/'].includes(peek().value)) {
+      const operator = consume().value;
+      const right = parseFactor();
+      if (right === undefined || (operator === '/' && Math.abs(right) < 0.0000001)) {
+        return undefined;
+      }
+      value = operator === '*' ? value * right : value / right;
+    }
+    return value;
+  };
+
+  const parseFactor = (): number | undefined => {
+    const token = peek();
+    if (!token) {
+      return undefined;
+    }
+    if (token.type === 'operator' && ['+', '-'].includes(token.value)) {
+      consume();
+      const value = parseFactor();
+      return value === undefined ? undefined : token.value === '-' ? -value : value;
+    }
+    if (token.type === 'number') {
+      consume();
+      const value = Number(token.value);
+      return Number.isFinite(value) ? value : undefined;
+    }
+    if (token.type === 'identifier') {
+      const identifier = consume().value;
+      if (peek()?.type === 'paren' && peek().value === '(') {
+        consume();
+        const args: number[] = [];
+        if (!(peek()?.type === 'paren' && peek().value === ')')) {
+          while (true) {
+            const arg = parseExpression();
+            if (arg === undefined) {
+              return undefined;
+            }
+            args.push(arg);
+            if (peek()?.type === 'comma') {
+              consume();
+              continue;
+            }
+            break;
+          }
+        }
+        if (!(peek()?.type === 'paren' && peek().value === ')')) {
+          return undefined;
+        }
+        consume();
+        return applyFormulaFunction(identifier, args);
+      }
+      return resolveFormulaIdentifier(identifier, context);
+    }
+    if (token.type === 'paren' && token.value === '(') {
+      consume();
+      const value = parseExpression();
+      if (!(peek()?.type === 'paren' && peek().value === ')')) {
+        return undefined;
+      }
+      consume();
+      return value;
+    }
+    return undefined;
+  };
+
+  const result = parseExpression();
+  return result !== undefined && index === tokens.length && Number.isFinite(result) ? result : undefined;
+}
+
+function tokenizeFormula(formula: string): FormulaToken[] {
+  const tokens: FormulaToken[] = [];
+  let index = 0;
+  while (index < formula.length) {
+    const rest = formula.slice(index);
+    const whitespace = rest.match(/^\s+/);
+    if (whitespace) {
+      index += whitespace[0].length;
+      continue;
+    }
+    const number = rest.match(/^(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/);
+    if (number) {
+      tokens.push({ type: 'number', value: number[0] });
+      index += number[0].length;
+      continue;
+    }
+    const identifier = rest.match(/^[A-Za-z_][A-Za-z0-9_.]*/);
+    if (identifier) {
+      tokens.push({ type: 'identifier', value: identifier[0] });
+      index += identifier[0].length;
+      continue;
+    }
+    const char = formula[index];
+    if (['+', '-', '*', '/'].includes(char)) {
+      tokens.push({ type: 'operator', value: char });
+      index += 1;
+      continue;
+    }
+    if (['(', ')'].includes(char)) {
+      tokens.push({ type: 'paren', value: char });
+      index += 1;
+      continue;
+    }
+    if (char === ',') {
+      tokens.push({ type: 'comma', value: char });
+      index += 1;
+      continue;
+    }
+    return [];
+  }
+  return tokens;
+}
+
+function resolveFormulaIdentifier(identifier: string, context: GeometryContext): number | undefined {
+  const normalized = identifier.toLowerCase();
+  if (normalized === 'pi') {
+    return Math.PI;
+  }
+  const value = context.refs.get(normalized);
+  return Number.isFinite(value) ? value : undefined;
+}
+
+function applyFormulaFunction(name: string, args: number[]): number | undefined {
+  switch (name.toLowerCase()) {
+    case 'guard':
+    case 'themeguard':
+    case 'setatref':
+      return args[0];
+    case 'abs':
+      return args.length === 1 ? Math.abs(args[0]) : undefined;
+    case 'min':
+      return args.length > 0 ? Math.min(...args) : undefined;
+    case 'max':
+      return args.length > 0 ? Math.max(...args) : undefined;
+    case 'sum':
+      return args.reduce((total, value) => total + value, 0);
+    case 'pi':
+      return args.length === 0 ? Math.PI : undefined;
+    default:
+      return undefined;
+  }
+}
+
+function splitFormulaArguments(args: string): string[] {
+  const result: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let index = 0; index < args.length; index += 1) {
+    const char = args[index];
+    if (char === '(') {
+      depth += 1;
+    } else if (char === ')') {
+      depth = Math.max(0, depth - 1);
+    } else if (char === ',' && depth === 0) {
+      result.push(args.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  const tail = args.slice(start).trim();
+  if (tail) {
+    result.push(tail);
+  }
+  return result;
+}
+
 function readFormulaPointList(cells: unknown[], name: string, context: GeometryContext, relative: boolean): Point[] {
   const formula = readCellFormula(cells, name) ?? readCellString(cells, name);
   const match = formula?.trim().match(/^[A-Z]+\((.*)\)$/i);
@@ -883,22 +1319,18 @@ function readFormulaPointList(cells: unknown[], name: string, context: GeometryC
     return [];
   }
 
-  const args = match[1];
-  if (/[A-Z_]/i.test(args)) {
-    return [];
-  }
-
-  const numbers = args.match(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g)?.map(Number) ?? [];
-  if (numbers.length < 4 || numbers.length % 2 !== 0 || numbers.length > 80) {
+  const values = splitFormulaArguments(match[1])
+    .map(argument => evaluateFormula(argument, context));
+  if (values.length < 4 || values.length % 2 !== 0 || values.length > 80 || values.some(value => value === undefined)) {
     return [];
   }
 
   const points: Point[] = [];
-  for (let index = 0; index < numbers.length; index += 2) {
-    const x = numbers[index];
-    const y = numbers[index + 1];
+  for (let index = 0; index < values.length; index += 2) {
+    const x = values[index];
+    const y = values[index + 1];
     if (Number.isFinite(x) && Number.isFinite(y)) {
-      points.push(toGeometryPoint(x, y, context, relative));
+      points.push(toGeometryPoint(x!, y!, context, relative));
     }
   }
   return points;

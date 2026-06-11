@@ -7,6 +7,7 @@ async function main(): Promise<void> {
   await verifiesMasterShapeGeometry();
   await verifiesCurvedGeometryRows();
   await verifiesAdvancedGeometryRows();
+  await verifiesFormulaGeometryAndMasterRowInheritance();
   await verifiesConnectorGeometryRows();
   await verifiesMasterFallbackWhenPageGeometryIsIncomplete();
   await verifiesEmbeddedImageRelationship();
@@ -121,14 +122,14 @@ async function verifiesAdvancedGeometryRows(): Promise<void> {
         <Row T="RelLineTo" IX="2"><Cell N="X" V="0.25"/><Cell N="Y" V="0.5"/></Row>
         <Row T="RelQuadBezTo" IX="3"><Cell N="X" V="0.5"/><Cell N="Y" V="0.5"/><Cell N="A" V="0.35"/><Cell N="B" V="0.75"/></Row>
         <Row T="RelCubBezTo" IX="4"><Cell N="X" V="0.75"/><Cell N="Y" V="0.25"/><Cell N="A" V="0.55"/><Cell N="B" V="0.75"/><Cell N="C" V="0.65"/><Cell N="D" V="0.25"/></Row>
-        <Row T="PolylineTo" IX="5"><Cell N="X" V="4"/><Cell N="Y" V="0"/><Cell N="A" F="POLYLINE(3.5,0.5,4,0)"/></Row>
+        <Row T="PolylineTo" IX="5"><Cell N="X" V="4"/><Cell N="Y" V="0"/><Cell N="A" F="POLYLINE(Width-0.5,Height*0.25,Width,0)"/></Row>
       </Section>
       <Section N="Geometry" IX="1">
         <Row T="Ellipse" IX="1"><Cell N="X" V="2"/><Cell N="Y" V="1"/><Cell N="A" V="3"/><Cell N="B" V="1"/><Cell N="C" V="2"/><Cell N="D" V="1.5"/></Row>
       </Section>
       <Section N="Geometry" IX="2">
         <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="1"/></Row>
-        <Row T="NURBSTo" IX="2"><Cell N="X" V="4"/><Cell N="Y" V="1"/><Cell N="E" F="NURBS(1,1,2,1,3,1)"/></Row>
+        <Row T="NURBSTo" IX="2"><Cell N="X" V="4"/><Cell N="Y" V="1"/><Cell N="E" F="NURBS(Width*0.25,Height*0.5,Width*0.5,Height*0.5,Width*0.75,Height*0.5)"/></Row>
       </Section>
     </Shape>
   </Shapes>
@@ -140,6 +141,54 @@ async function verifiesAdvancedGeometryRows(): Promise<void> {
   assert.ok(geometryPath.includes(' C '), 'expected relative cubic geometry to compile');
   assert.ok(geometryPath.includes(' A '), 'expected ellipse geometry to compile to SVG arcs');
   assert.ok(geometryPath.includes('L 3.5 1.5'), 'expected polyline formula vertices to be rendered');
+}
+
+async function verifiesFormulaGeometryAndMasterRowInheritance(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/masters/masters.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<Masters xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <Master ID="2" NameU="FormulaMaster"><Rel r:id="rId1"/></Master>
+</Masters>`);
+  zip.file('visio/masters/_rels/masters.xml.rels', `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.microsoft.com/visio/2010/relationships/master" Target="master1.xml"/>
+</Relationships>`);
+  zip.file('visio/masters/master1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<MasterContents>
+  <Shapes>
+    <Shape ID="5">
+      <Cell N="Width" V="4"/>
+      <Cell N="Height" V="2"/>
+      <Section N="Scratch">
+        <Row IX="1"><Cell N="Y" V="1" F="Width*0.25"/></Row>
+      </Section>
+      <Section N="Geometry" IX="0">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="1" F="Scratch.Y1"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" V="3" F="Width*0.75"/><Cell N="Y" V="1" F="Height*0.5"/></Row>
+        <Row T="LineTo" IX="3"><Cell N="X" V="4" F="Width"/><Cell N="Y" V="2" F="Height"/></Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</MasterContents>`);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="FormulaMaster" Master="2">
+      <Cell N="PinX" V="4"/>
+      <Cell N="PinY" V="4"/>
+      <Cell N="Width" V="8"/>
+      <Cell N="Height" V="4"/>
+      <Section N="Geometry" IX="0">
+        <Row T="LineTo" IX="2"><Cell N="X" V="6" F="Width*0.75"/></Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'formula-inheritance-fixture.vsdx');
+  const geometryPath = diagram.pages[0]?.shapes[0]?.geometryPath ?? '';
+  assert.strictEqual(geometryPath, 'M 2 4 L 6 2 L 8 0');
 }
 
 async function verifiesMasterFallbackWhenPageGeometryIsIncomplete(): Promise<void> {

@@ -2,6 +2,18 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.5 - 2026-06-11
+
+### Added
+
+- Added a conservative ShapeSheet formula evaluator for geometry cells, including arithmetic, `Width`/`Height`, `Geometry*` and `Scratch*` references, and safe functions such as `GUARD`, `MIN`, `MAX`, and `ABS`.
+- Merged page-level Geometry row overrides with master Geometry rows so inherited cells can still render instead of falling back to rectangles or missing paths.
+- Evaluated `PolylineTo` and `NURBSTo` formula arguments through the same safe formula path.
+
+### Changed
+
+- `LineTo`, arc, and Bezier rows now require an existing current point; they no longer silently become `MoveTo` when a malformed or deleted first row is encountered.
+
 ## 0.1.4 - 2026-06-11
 
 ### Added
