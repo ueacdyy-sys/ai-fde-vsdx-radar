@@ -871,17 +871,28 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         image.setAttribute('preserveAspectRatio', 'xMidYMid meet');
         group.append(image);
       }
-      const rect = document.createElementNS(svgNS, 'rect');
-      rect.classList.add('shape-outline');
-      rect.setAttribute('x', String(x));
-      rect.setAttribute('y', String(y));
-      rect.setAttribute('width', String(width));
-      rect.setAttribute('height', String(height));
-      rect.setAttribute('rx', String(Math.min(0.08, height / 6)));
-      rect.setAttribute('fill', shape.imageDataUri ? 'none' : safeColor(shape.fill, '#ffffff'));
-      rect.setAttribute('stroke', safeColor(shape.line, '#586069'));
-      rect.setAttribute('stroke-width', String(Math.max(0.012, numberOr(shape.strokeWidth, 0.02))));
-      group.append(rect);
+      if (shape.geometryPath) {
+        const path = document.createElementNS(svgNS, 'path');
+        path.classList.add('shape-outline');
+        path.setAttribute('d', shape.geometryPath);
+        path.setAttribute('transform', 'translate(' + x + ' ' + y + ')');
+        path.setAttribute('fill', shape.imageDataUri ? 'none' : safeColor(shape.fill, '#ffffff'));
+        path.setAttribute('stroke', safeColor(shape.line, '#586069'));
+        path.setAttribute('stroke-width', String(Math.max(0.012, numberOr(shape.strokeWidth, 0.02))));
+        group.append(path);
+      } else {
+        const rect = document.createElementNS(svgNS, 'rect');
+        rect.classList.add('shape-outline');
+        rect.setAttribute('x', String(x));
+        rect.setAttribute('y', String(y));
+        rect.setAttribute('width', String(width));
+        rect.setAttribute('height', String(height));
+        rect.setAttribute('rx', String(Math.min(0.08, height / 6)));
+        rect.setAttribute('fill', shape.imageDataUri ? 'none' : safeColor(shape.fill, '#ffffff'));
+        rect.setAttribute('stroke', safeColor(shape.line, '#586069'));
+        rect.setAttribute('stroke-width', String(Math.max(0.012, numberOr(shape.strokeWidth, 0.02))));
+        group.append(rect);
+      }
 
       if (shape.text) {
         const text = document.createElementNS(svgNS, 'text');

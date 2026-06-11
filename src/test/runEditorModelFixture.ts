@@ -28,6 +28,13 @@ async function verifiesMasterShapeGeometry(): Promise<void> {
       <Cell N="Height" V="0.4921259842"/>
       <Cell N="LineColor" V="#111827"/>
       <Cell N="FillForegnd" V="#ffff80"/>
+      <Section N="Geometry">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" V="0.9842519685"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="3"><Cell N="X" V="0.9842519685"/><Cell N="Y" V="0.4921259842"/></Row>
+        <Row T="LineTo" IX="4"><Cell N="X" V="0"/><Cell N="Y" V="0.4921259842"/></Row>
+        <Row T="LineTo" IX="5"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+      </Section>
     </Shape>
   </Shapes>
 </MasterContents>`);
@@ -51,6 +58,7 @@ async function verifiesMasterShapeGeometry(): Promise<void> {
   assert.ok(Math.abs((shape.width ?? 0) - 0.9842519685) < 0.00001, 'expected width inherited from master');
   assert.ok(Math.abs((shape.height ?? 0) - 0.4921259842) < 0.00001, 'expected height inherited from master');
   assert.strictEqual(shape.fill, '#ffff80');
+  assert.ok(shape.geometryPath?.startsWith('M 0 0.4921'), 'expected geometry path inherited from master');
 }
 
 async function verifiesEmbeddedImageRelationship(): Promise<void> {

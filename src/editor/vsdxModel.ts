@@ -53,6 +53,7 @@ export interface VsdxEditorShape {
   endX?: number;
   endY?: number;
   imageDataUri?: string;
+  geometryPath?: string;
 }
 
 export interface VsdxEditorShapeUpdate {
@@ -292,6 +293,9 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const pinY = readCellNumber(cells, 'PinY');
   const width = readCellNumber(cells, 'Width') ?? readCellNumber(masterCells, 'Width');
   const height = readCellNumber(cells, 'Height') ?? readCellNumber(masterCells, 'Height');
+  const geometryPath = width !== undefined && height !== undefined
+    ? compileGeometryPath(shape, masterShape, width, height)
+    : undefined;
   const editable = [pinX, pinY, width, height].every(value => value !== undefined)
     && Math.abs(angle) < 0.0001
     && !hasChildShapes;
@@ -304,7 +308,8 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     y: pinY !== undefined && height !== undefined ? pinY - height / 2 : undefined,
     width,
     height,
-    imageDataUri
+    imageDataUri,
+    geometryPath
   };
 }
 
@@ -531,6 +536,70 @@ function readShapeImageDataUri(shape: any, imageDataUriByRelId: Map<string, stri
     }
   }
   return undefined;
+}
+
+function compileGeometryPath(shape: any, masterShape: any, targetWidth: number, targetHeight: number): string | undefined {
+  const source = hasGeometrySection(shape) ? shape : hasGeometrySection(masterShape) ? masterShape : undefined;
+  if (!source) {
+    return undefined;
+  }
+
+  const sourceCells = toArray(source?.Cell);
+  const sourceWidth = readCellNumber(sourceCells, 'Width') ?? targetWidth;
+  const sourceHeight = readCellNumber(sourceCells, 'Height') ?? targetHeight;
+  if (sourceWidth <= 0 || sourceHeight <= 0 || targetWidth <= 0 || targetHeight <= 0) {
+    return undefined;
+  }
+
+  const scaleX = targetWidth / sourceWidth;
+  const scaleY = targetHeight / sourceHeight;
+  const commands: string[] = [];
+  let firstPoint: Point | undefined;
+  let lastPoint: Point | undefined;
+
+  for (const section of toArray(source?.Section)) {
+    if (String(section?.N ?? '').toLowerCase() !== 'geometry') {
+      continue;
+    }
+
+    for (const row of toArray(section?.Row)) {
+      if (String(row?.Del ?? '') === '1') {
+        continue;
+      }
+      const cells = toArray(row?.Cell);
+      const x = readCellNumber(cells, 'X');
+      const y = readCellNumber(cells, 'Y');
+      if (x === undefined || y === undefined) {
+        continue;
+      }
+
+      const point = {
+        x: x * scaleX,
+        y: targetHeight - y * scaleY
+      };
+      const rowType = String(row?.T ?? row?.N ?? '').toLowerCase();
+      const command = rowType === 'moveto' || commands.length === 0 ? 'M' : 'L';
+      commands.push(`${command} ${formatNumber(point.x)} ${formatNumber(point.y)}`);
+      firstPoint = firstPoint ?? point;
+      lastPoint = point;
+    }
+  }
+
+  if (commands.length < 2) {
+    return undefined;
+  }
+  if (firstPoint && lastPoint && samePoint(firstPoint, lastPoint)) {
+    commands.push('Z');
+  }
+  return commands.join(' ');
+}
+
+function hasGeometrySection(shape: any): boolean {
+  return toArray(shape?.Section).some(section => String(section?.N ?? '').toLowerCase() === 'geometry');
+}
+
+function samePoint(a: Point, b: Point): boolean {
+  return Math.abs(a.x - b.x) < 0.0001 && Math.abs(a.y - b.y) < 0.0001;
 }
 
 function setCellNumber(cells: any[], name: string, value: number): void {

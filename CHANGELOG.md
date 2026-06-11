@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.3 - 2026-06-11
+
+### Added
+
+- Began the semantic VSDX rendering upgrade by compiling Visio `Geometry` sections from page or master shapes into SVG paths.
+- Rendered semantic geometry paths in the interactive editor before falling back to rectangle outlines.
+- Expanded editor model fixtures to assert master-inherited geometry rendering.
+
 ## 0.1.2 - 2026-06-11
 
 ### Fixed
