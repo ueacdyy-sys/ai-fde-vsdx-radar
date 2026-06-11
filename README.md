@@ -1,11 +1,17 @@
 # Visio VSDX Preview & QA Linter
 
-Visio VSDX Preview & QA Linter brings Microsoft Visio `.vsdx` review into VS Code: export local previews, lint diagram structure, and collect review evidence without leaving the editor.
+一个面向科研绘图和项目制图场景的 VS Code 插件：可以在 VS Code 中直接预览、轻量编辑和检查 Microsoft Visio `.vsdx` 文件。它的初衷很简单：让科研工作者、研究生、工程研究人员和需要频繁画图改图的人，不必每次都在编辑器、文件夹和 Visio 之间来回切换，也能把预览、结构检查和交付证据放进同一个工作流里。
+
+这个项目由我个人维护。如果你在科研研究、论文配图、项目汇报、架构图、流程图或 Visio 文件协作中遇到任何问题，或者希望它支持新的能力，欢迎直接到 [GitHub Issues](https://github.com/ueacdyy-sys/ai-fde-vsdx-radar/issues) 提反馈和需求。只要不是特别重的功能，我都会尽量推进。也可以通过邮件联系我：`ueacdyy@gmail.com`。如果这个插件对你有帮助，也欢迎在 GitHub 上给一个 Star，这会让我更容易判断大家真正需要什么。
+
+Visio VSDX Preview & QA Linter brings Microsoft Visio `.vsdx` review into VS Code: interactive preview, lightweight edits, local preview export, diagram QA, and review evidence without leaving the editor.
 
 ![Visio VSDX Preview and QA Linter preview](images/marketplace-preview.png)
 
 ## What It Does
 
+- Opens `.vsdx` files with an interactive custom editor in VS Code.
+- Supports zoom, page switching, shape dragging, connector endpoint dragging, and lightweight text edits for supported shapes.
 - Exports `.vsdx` files to cached PNG or PDF previews through local Microsoft Visio automation.
 - Supports multi-page diagrams with one preview per page.
 - Parses `.vsdx` XML and writes `.aifde/qa/*.qa.json` plus `.qa.md` summaries.
@@ -26,13 +32,14 @@ The QA linter reads `.vsdx` XML locally. High-fidelity preview export requires V
 ## Quick Start
 
 1. Open a workspace containing `.vsdx` files.
-2. Right-click a `.vsdx` file.
-3. Run `AI-FDE: Export Preview and QA`.
-4. Open the generated preview from `.aifde/previews`.
-5. Open the generated QA summary from `.aifde/qa`.
+2. Open a `.vsdx` file directly. The extension opens the interactive VSDX editor by default.
+3. Use the toolbar to switch pages, zoom, save, reveal the source file, or open settings.
+4. Drag supported shapes or connector endpoints, or edit text from the side panel.
+5. Run `AI-FDE: Export Preview and QA` when you need cached PNG/PDF previews and QA evidence.
 
 Useful commands:
 
+- `AI-FDE: 打开 VSDX 交互预览 / Open Interactive VSDX Editor`
 - `AI-FDE: Export Preview and QA`
 - `AI-FDE: Open VSDX Preview`
 - `AI-FDE: Open All VSDX Previews`
@@ -126,6 +133,14 @@ npm run acceptance
 ```
 
 See `docs/publishing.md` for the release checklist.
+
+## Feedback And Contact
+
+This is a personal-maintained project for people who want a more convenient Visio and research-diagram workflow inside VS Code. Feedback, bug reports, and feature requests are very welcome:
+
+- GitHub Issues: <https://github.com/ueacdyy-sys/ai-fde-vsdx-radar/issues>
+- Email: `ueacdyy@gmail.com`
+- GitHub Star: <https://github.com/ueacdyy-sys/ai-fde-vsdx-radar>
 
 ## Limitations
 

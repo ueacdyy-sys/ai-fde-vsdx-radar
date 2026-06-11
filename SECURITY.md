@@ -4,7 +4,7 @@ AI-FDE VSDX Radar runs locally inside VS Code and writes workspace artifacts und
 
 ## Reporting
 
-Please report security issues privately to the repository owner before opening a public issue. If this project is moved to another GitHub organization, update this file with the preferred private disclosure address.
+Please report security issues privately to the repository owner at `ueacdyy@gmail.com` before opening a public issue. If this project is moved to another GitHub organization, update this file with the preferred private disclosure address.
 
 ## Local Execution Notes
 

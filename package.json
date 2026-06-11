@@ -1,8 +1,8 @@
 {
   "name": "ai-fde-vsdx-radar",
   "displayName": "Visio VSDX Preview & QA Linter",
-  "description": "Preview, lint, and review Microsoft Visio VSDX files in VS Code.",
-  "version": "0.1.0",
+  "description": "在 VS Code 中预览、轻量编辑和 QA Microsoft Visio VSDX 文件。",
+  "version": "0.1.1",
   "publisher": "ai-fde-lab",
   "license": "SEE LICENSE IN LICENSE.txt",
   "author": {

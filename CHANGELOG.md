@@ -2,6 +2,25 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.1 - 2026-06-11
+
+### Added
+
+- Interactive `.vsdx` custom editor as the default VS Code open experience.
+- Page switching, zoom controls, shape dragging, connector endpoint dragging, and lightweight text editing for supported VSDX shapes.
+- Simplified Chinese and English UI controls for the interactive editor.
+- File status explanation in the editor side panel, including clearer wording for missing preview cache (`M`).
+
+### Changed
+
+- `M` status now represents a missing preview cache warning instead of a linter/file-format error.
+- Compacted the interactive editor toolbar so status badges no longer push common buttons out of the first row.
+- Added a default VS Code editor association for `*.vsdx`.
+
+### Support
+
+- Added Chinese-friendly Marketplace wording, GitHub Issues guidance, and contact email `ueacdyy@gmail.com`.
+
 ## 0.1.0 - 2026-06-08
 
 ### Added
