@@ -2,9 +2,20 @@ import * as crypto from 'crypto';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { PreviewFormat, WorkspacePaths } from './types';
+export {
+  allVisioFileGlob,
+  allVisioOpenDialogExtensions,
+  getVisioFormatSupport,
+  isLegacyVisioPath,
+  isModernVisioPath,
+  isVisioPath,
+  modernVisioFileGlob,
+  modernVisioOpenDialogExtensions
+} from './visioFormats';
+import { isModernVisioPath } from './visioFormats';
 
 export function isVsdxPath(filePath: string): boolean {
-  return path.extname(filePath).toLowerCase() === '.vsdx';
+  return isModernVisioPath(filePath);
 }
 
 export function shortHash(value: string): string {

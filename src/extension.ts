@@ -8,7 +8,13 @@ import { exportVisioPreview } from './exporter/visioExporter';
 import { analyzeVsdx } from './qa/vsdxParser';
 import { toQaSummaryMarkdown } from './qa/reporter';
 import {
-  isVsdxPath,
+  allVisioFileGlob,
+  allVisioOpenDialogExtensions,
+  isLegacyVisioPath,
+  isModernVisioPath,
+  isVisioPath,
+  modernVisioFileGlob,
+  modernVisioOpenDialogExtensions,
   resolvePreviewPath,
   resolveQaPath,
   resolveQaSummaryPath,
@@ -302,7 +308,7 @@ class VsdxDecorationProvider implements vscode.FileDecorationProvider {
   }
 
   async provideFileDecoration(uri: vscode.Uri): Promise<vscode.FileDecoration | undefined> {
-    if (!isVsdxPath(uri.fsPath)) {
+    if (!isVisioPath(uri.fsPath)) {
       return undefined;
     }
 
@@ -324,7 +330,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(vscode.commands.registerCommand('aiFdeVsdxRadar.openInteractiveEditor', async (uri?: vscode.Uri) => {
     await runSafely(async () => {
-      const filePath = await resolveTargetPath(uri);
+      const filePath = await resolveTargetPath(uri, { allowLegacy: true });
       if (!filePath) {
         return;
       }
@@ -338,7 +344,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(vscode.commands.registerCommand('aiFdeVsdxRadar.exportPreview', async (uri?: vscode.Uri) => {
     await runSafely(async () => {
-      const filePath = await resolveTargetPath(uri);
+      const filePath = await resolveTargetPath(uri, { allowLegacy: true });
       if (!filePath) {
         return;
       }
@@ -376,7 +382,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(vscode.commands.registerCommand('aiFdeVsdxRadar.openPreview', async (uri?: vscode.Uri) => {
     await runSafely(async () => {
-      const filePath = await resolveTargetPath(uri);
+      const filePath = await resolveTargetPath(uri, { allowLegacy: true });
       if (!filePath) {
         return;
       }
@@ -392,7 +398,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(vscode.commands.registerCommand('aiFdeVsdxRadar.openAllPreviews', async (uri?: vscode.Uri) => {
     await runSafely(async () => {
-      const filePath = await resolveTargetPath(uri);
+      const filePath = await resolveTargetPath(uri, { allowLegacy: true });
       if (!filePath) {
         return;
       }
@@ -426,7 +432,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(vscode.commands.registerCommand('aiFdeVsdxRadar.showStatus', async (uri?: vscode.Uri) => {
     await runSafely(async () => {
-      const filePath = await resolveTargetPath(uri);
+      const filePath = await resolveTargetPath(uri, { allowLegacy: true });
       if (!filePath) {
         return;
       }
@@ -443,7 +449,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(vscode.commands.registerCommand('aiFdeVsdxRadar.revealArtifacts', async (uri?: vscode.Uri) => {
     await runSafely(async () => {
-      const filePath = await resolveTargetPath(uri);
+      const filePath = await resolveTargetPath(uri, { allowLegacy: true });
       if (!filePath) {
         return;
       }
@@ -714,7 +720,7 @@ export function activate(context: vscode.ExtensionContext): void {
     });
   }));
 
-  const watcher = vscode.workspace.createFileSystemWatcher('**/*.vsdx');
+  const watcher = vscode.workspace.createFileSystemWatcher(allVisioFileGlob);
   context.subscriptions.push(watcher);
   watcher.onDidChange(uri => {
     decorations.refresh(uri);
@@ -733,9 +739,16 @@ export function deactivate(): void {
   pendingAutoRuns.clear();
 }
 
-async function resolveTargetPath(uri?: vscode.Uri): Promise<string | undefined> {
-  if (uri?.fsPath && isVsdxPath(uri.fsPath)) {
+async function resolveTargetPath(uri?: vscode.Uri, options: { allowLegacy?: boolean } = {}): Promise<string | undefined> {
+  if (uri?.fsPath && isModernVisioPath(uri.fsPath)) {
     return uri.fsPath;
+  }
+  if (uri?.fsPath && isLegacyVisioPath(uri.fsPath)) {
+    if (options.allowLegacy) {
+      return uri.fsPath;
+    }
+    await showLegacyVisioWarning();
+    return undefined;
   }
 
   const selected = await vscode.window.showOpenDialog({
@@ -743,11 +756,25 @@ async function resolveTargetPath(uri?: vscode.Uri): Promise<string | undefined> 
     canSelectFolders: false,
     canSelectMany: false,
     filters: {
-      'Visio Drawing': ['vsdx']
+      [options.allowLegacy ? 'Visio files' : 'Modern Visio packages']: options.allowLegacy
+        ? allVisioOpenDialogExtensions
+        : modernVisioOpenDialogExtensions
     }
   });
 
-  return selected?.[0]?.fsPath;
+  const selectedPath = selected?.[0]?.fsPath;
+  if (selectedPath && isLegacyVisioPath(selectedPath) && !options.allowLegacy) {
+    await showLegacyVisioWarning();
+    return undefined;
+  }
+
+  return selectedPath;
+}
+
+async function showLegacyVisioWarning(): Promise<void> {
+  await vscode.window.showWarningMessage(
+    'AI-FDE VSDX Radar: legacy binary Visio files (.vsd/.vss/.vst) cannot be semantically QA-checked or edited yet. Convert them to .vsdx/.vsdm/.vssx/.vssm/.vstx/.vstm for semantic preview and lightweight editing.'
+  );
 }
 
 async function exportPreviewForFile(extensionRoot: string, filePath: string): Promise<PreviewExportResult> {
@@ -2158,7 +2185,7 @@ async function collectWorkspaceReportItems(): Promise<WorkspaceReportCollection>
     : path.join(workspaceFolders[0].uri.fsPath, config.outputDirectory);
   const notesPath = resolveWorkspaceNotesPath(reportRoot);
   const notes = await loadWorkspaceRiskNotes(notesPath);
-  const uris = await vscode.workspace.findFiles('**/*.vsdx', '**/{.aifde,.git,node_modules}/**');
+  const uris = await vscode.workspace.findFiles(modernVisioFileGlob, '**/{.aifde,.git,node_modules}/**');
   const items: WorkspaceReportItem[] = [];
 
   for (const uri of uris.sort((a, b) => a.fsPath.localeCompare(b.fsPath))) {
@@ -4402,7 +4429,7 @@ function resolvePreviewOpenPaths(result: PreviewExportResult): string[] {
 
 function scheduleAutoExport(extensionRoot: string, uri: vscode.Uri, decorations: VsdxDecorationProvider): void {
   const config = getRadarConfig();
-  if (!config.autoExportOnSave || !isVsdxPath(uri.fsPath)) {
+  if (!config.autoExportOnSave || !isModernVisioPath(uri.fsPath)) {
     return;
   }
 
@@ -4436,6 +4463,25 @@ async function getVsdxStatus(filePath: string): Promise<VsdxStatus> {
   const previewFreshness = await getPreviewFreshness(cacheIndex, filePath, previewPath, config.previewFormat);
   const previewFresh = previewExists && previewFreshness.fresh;
   const previewFreshnessReasons = previewFreshness.reasons;
+
+  if (isLegacyVisioPath(filePath)) {
+    return {
+      badge: previewExists && previewFresh ? 'R' : previewExists ? 'S' : 'M',
+      color: 'charts.yellow',
+      tooltip: previewExists && previewFresh
+        ? 'AI-FDE VSDX Radar: legacy binary Visio file. Preview export is available, but semantic QA and lightweight editing require conversion to a modern Visio package.'
+        : formatPreviewFreshnessTooltip(
+          'AI-FDE VSDX Radar: legacy binary Visio file. Export a preview if needed; semantic QA and lightweight editing require conversion to a modern Visio package.',
+          previewFreshnessReasons
+        ),
+      previewPath,
+      qaPath,
+      summaryPath,
+      errors: 0,
+      warnings: 1,
+      previewFreshnessReasons
+    };
+  }
 
   if (!previewExists) {
     return {

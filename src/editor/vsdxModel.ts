@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import JSZip from 'jszip';
 import { XMLBuilder, XMLParser } from 'fast-xml-parser';
+import { getVisioFormatSupport, type VisioFormatSupport } from '../visioFormats';
 
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
@@ -21,6 +22,8 @@ export type VsdxEditorShapeKind = 'shape' | 'connector';
 
 export interface VsdxEditorDiagram {
   sourceName: string;
+  formatSupport: VisioFormatSupport;
+  readOnlyReason?: string;
   pages: VsdxEditorPage[];
   unsupportedNotes: string[];
 }
@@ -118,7 +121,23 @@ export async function readVsdxDiagramFromFile(filePath: string): Promise<{ bytes
 }
 
 export async function readVsdxDiagram(bytes: Buffer, sourceName: string): Promise<VsdxEditorDiagram> {
-  const zip = await JSZip.loadAsync(bytes);
+  const formatSupport = getVisioFormatSupport(sourceName);
+  if (formatSupport === 'legacy-binary') {
+    return createUnsupportedVisioDiagram(
+      sourceName,
+      'Legacy binary Visio files (.vsd/.vss/.vst) are recognized, but semantic preview and lightweight editing require a modern Visio package such as .vsdx, .vsdm, .vssx, .vssm, .vstx, or .vstm.'
+    );
+  }
+
+  let zip: JSZip;
+  try {
+    zip = await JSZip.loadAsync(bytes);
+  } catch (error) {
+    return createUnsupportedVisioDiagram(
+      sourceName,
+      `This file could not be opened as a modern Visio package: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
   const pageMetadata = await readPageMetadata(zip);
   const masterShapes = await readMasterShapes(zip);
   const pageEntries = Object.keys(zip.files)
@@ -154,11 +173,99 @@ export async function readVsdxDiagram(bytes: Buffer, sourceName: string): Promis
     return { page, unsupportedNote };
   }));
 
+  const pages = pageResults.map(result => result?.page).filter(isDefined);
+  const unsupportedNotes = pageResults.map(result => result?.unsupportedNote).filter(isDefined);
+  if (pages.length === 0 && masterShapes.size > 0) {
+    const masterPages = createMasterPreviewPages(masterShapes);
+    return {
+      sourceName,
+      formatSupport: 'modern-package',
+      readOnlyReason: 'This Visio package has no regular page XML. Master shapes are shown as read-only preview pages.',
+      pages: masterPages,
+      unsupportedNotes: [
+        'No regular Visio page XML entries were found. Showing read-only master/stencil previews instead.',
+        ...unsupportedNotes
+      ]
+    };
+  }
+
   return {
     sourceName,
-    pages: pageResults.map(result => result?.page).filter(isDefined),
-    unsupportedNotes: pageResults.map(result => result?.unsupportedNote).filter(isDefined)
+    formatSupport: 'modern-package',
+    pages,
+    unsupportedNotes
   };
+}
+
+export function createUnsupportedVisioDiagram(sourceName: string, reason: string): VsdxEditorDiagram {
+  return {
+    sourceName,
+    formatSupport: getVisioFormatSupport(sourceName),
+    readOnlyReason: reason,
+    pages: [{
+      id: 'unsupported',
+      entry: '__unsupported__',
+      name: path.basename(sourceName),
+      width: 8.5,
+      height: 6,
+      shapes: [{
+        id: 'unsupported-message',
+        kind: 'shape',
+        name: 'Unsupported Visio format',
+        text: reason,
+        editable: false,
+        reason,
+        fill: '#fff7ed',
+        line: '#d97706',
+        strokeWidth: 0.03,
+        x: 0.75,
+        y: 2.1,
+        width: 7,
+        height: 1.8
+      }]
+    }],
+    unsupportedNotes: [reason]
+  };
+}
+
+function createMasterPreviewPages(masterShapes: Map<string, any>): VsdxEditorPage[] {
+  return Array.from(masterShapes.entries()).map(([masterId, masterShape], index) => {
+    const previewShape = normalizeMasterPreviewShape(masterShape, masterId);
+    const cells = toArray(previewShape?.Cell);
+    const width = validPageSize(readCellNumber(cells, 'Width'), 2);
+    const height = validPageSize(readCellNumber(cells, 'Height'), 1.2);
+    const pageWidth = Math.max(3, width + 1);
+    const pageHeight = Math.max(2.2, height + 1);
+    const shapes = collectEditorShapes([previewShape], {
+      masterShapes: new Map(),
+      imageDataUriByRelId: new Map(),
+      readOnlyReason: 'Stencil/template master shapes are shown for preview and are not written back as page shapes.'
+    });
+
+    return {
+      id: `master-${masterId}`,
+      entry: `__master__/${masterId}`,
+      name: String(previewShape?.Name ?? previewShape?.NameU ?? `Master ${index + 1}`),
+      width: pageWidth,
+      height: pageHeight,
+      shapes
+    };
+  });
+}
+
+function normalizeMasterPreviewShape(masterShape: any, masterId: string): any {
+  const shape = cloneXml(masterShape);
+  shape.ID = normalizedId(shape?.ID) ?? masterId;
+  const cells = ensureArrayProperty(shape, 'Cell');
+  const width = validPageSize(readCellNumber(cells, 'Width'), 2);
+  const height = validPageSize(readCellNumber(cells, 'Height'), 1.2);
+  setCellNumber(cells, 'Width', width);
+  setCellNumber(cells, 'Height', height);
+  setCellNumber(cells, 'PinX', width / 2 + 0.5);
+  setCellNumber(cells, 'PinY', height / 2 + 0.5);
+  setCellNumber(cells, 'LocPinX', width / 2);
+  setCellNumber(cells, 'LocPinY', height / 2);
+  return shape;
 }
 
 export async function writeVsdxDiagramToFile(filePath: string, sourceBytes: Buffer, diagram: VsdxEditorDiagram): Promise<Buffer> {
@@ -168,6 +275,10 @@ export async function writeVsdxDiagramToFile(filePath: string, sourceBytes: Buff
 }
 
 export async function writeVsdxDiagram(sourceBytes: Buffer, diagram: VsdxEditorDiagram): Promise<Buffer> {
+  if (diagram.formatSupport !== 'modern-package' || diagram.pages.every(page => page.entry.startsWith('__'))) {
+    return Buffer.from(sourceBytes);
+  }
+
   const zip = await JSZip.loadAsync(sourceBytes);
   const pageByEntry = new Map(diagram.pages.map(page => [page.entry, page]));
 
@@ -388,10 +499,19 @@ function applyShapeUpdates(shapes: any[], updateById: Map<string, VsdxEditorShap
 function applyShapeUpdate(shape: any, update: VsdxEditorShape): void {
   const cells = ensureArrayProperty(shape, 'Cell');
   if (update.kind === 'connector') {
-    setCellNumber(cells, 'BeginX', cleanNumber(update.beginX, 0));
-    setCellNumber(cells, 'BeginY', cleanNumber(update.beginY, 0));
-    setCellNumber(cells, 'EndX', cleanNumber(update.endX, 0));
-    setCellNumber(cells, 'EndY', cleanNumber(update.endY, 0));
+    const begin = {
+      x: cleanNumber(update.beginX, 0),
+      y: cleanNumber(update.beginY, 0)
+    };
+    const end = {
+      x: cleanNumber(update.endX, 0),
+      y: cleanNumber(update.endY, 0)
+    };
+    setCellNumber(cells, 'BeginX', begin.x);
+    setCellNumber(cells, 'BeginY', begin.y);
+    setCellNumber(cells, 'EndX', end.x);
+    setCellNumber(cells, 'EndY', end.y);
+    syncConnectorGeometry(shape, cells, begin, end);
     writeShapeText(shape, update.text);
     return;
   }
@@ -405,6 +525,54 @@ function applyShapeUpdate(shape: any, update: VsdxEditorShape): void {
   setCellNumber(cells, 'Width', width);
   setCellNumber(cells, 'Height', height);
   writeShapeText(shape, update.text);
+}
+
+function syncConnectorGeometry(shape: any, cells: any[], begin: Point, end: Point): void {
+  const minSize = 0.0001;
+  const rawWidth = Math.abs(end.x - begin.x);
+  const rawHeight = Math.abs(end.y - begin.y);
+  const width = Math.max(minSize, rawWidth);
+  const height = Math.max(minSize, rawHeight);
+  const left = rawWidth < minSize ? begin.x - width / 2 : Math.min(begin.x, end.x);
+  const bottom = rawHeight < minSize ? begin.y - height / 2 : Math.min(begin.y, end.y);
+  const localBegin = { x: begin.x - left, y: begin.y - bottom };
+  const localEnd = { x: end.x - left, y: end.y - bottom };
+
+  setCellNumber(cells, 'PinX', left + width / 2);
+  setCellNumber(cells, 'PinY', bottom + height / 2);
+  setCellNumber(cells, 'Width', width);
+  setCellNumber(cells, 'Height', height);
+  setCellNumber(cells, 'LocPinX', width / 2);
+  setCellNumber(cells, 'LocPinY', height / 2);
+  rewriteConnectorGeometrySection(shape, localBegin, localEnd);
+}
+
+function rewriteConnectorGeometrySection(shape: any, localBegin: Point, localEnd: Point): void {
+  const sections = ensureArrayProperty(shape, 'Section');
+  const retainedSections = sections.filter((section: any) => String(section?.N ?? '').toLowerCase() !== 'geometry');
+  retainedSections.push({
+    N: 'Geometry',
+    IX: '0',
+    Row: [
+      {
+        T: 'MoveTo',
+        IX: '1',
+        Cell: [
+          { N: 'X', V: formatNumber(localBegin.x) },
+          { N: 'Y', V: formatNumber(localBegin.y) }
+        ]
+      },
+      {
+        T: 'LineTo',
+        IX: '2',
+        Cell: [
+          { N: 'X', V: formatNumber(localEnd.x) },
+          { N: 'Y', V: formatNumber(localEnd.y) }
+        ]
+      }
+    ]
+  });
+  shape.Section = retainedSections;
 }
 
 async function readPageMetadata(zip: JSZip): Promise<Map<string, PageMetadata>> {
@@ -1417,6 +1585,7 @@ function setCellNumber(cells: any[], name: string, value: number): void {
   const formatted = formatNumber(value);
   if (cell) {
     cell.V = formatted;
+    delete cell.F;
   } else {
     cells.push({ N: name, V: formatted });
   }

@@ -10,7 +10,10 @@ async function main(): Promise<void> {
   await verifiesFormulaGeometryAndMasterRowInheritance();
   await verifiesColorFormulaAndNoPaint();
   await verifiesMasterChildShapeExpansion();
+  await verifiesStencilMasterFallbackPreview();
+  await verifiesLegacyVisioBinaryGetsReadOnlyDiagram();
   await verifiesRichTextWriteBackPreservesFormattingMarkers();
+  await verifiesConnectorWriteBackSynchronizesGeometry();
   await verifiesConnectorGeometryRows();
   await verifiesMasterFallbackWhenPageGeometryIsIncomplete();
   await verifiesEmbeddedImageRelationship();
@@ -350,6 +353,109 @@ async function verifiesRichTextWriteBackPreservesFormattingMarkers(): Promise<vo
   assert.ok(pageXml.includes('<tp IX="0"'), 'expected tab formatting marker to remain');
   assert.ok(pageXml.includes('New &lt;formatted&gt; &amp; checked'), 'expected edited text to be escaped');
   assert.ok(!pageXml.includes('Old formatted text'), 'expected old text payload to be removed');
+}
+
+async function verifiesConnectorWriteBackSynchronizesGeometry(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Dynamic connector">
+      <Cell N="PinX" V="2" F="GUARD(2)"/>
+      <Cell N="PinY" V="2" F="GUARD(2)"/>
+      <Cell N="Width" V="3" F="GUARD(3)"/>
+      <Cell N="Height" V="2" F="GUARD(2)"/>
+      <Cell N="BeginX" V="1" F="GUARD(1)"/>
+      <Cell N="BeginY" V="1" F="GUARD(1)"/>
+      <Cell N="EndX" V="4" F="GUARD(4)"/>
+      <Cell N="EndY" V="3" F="GUARD(3)"/>
+      <Section N="Geometry" IX="0">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" V="3"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="3"><Cell N="X" V="3"/><Cell N="Y" V="2"/></Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const sourceBytes = await zip.generateAsync({ type: 'nodebuffer' });
+  const diagram = await readVsdxDiagram(sourceBytes, 'connector-writeback-fixture.vsdx');
+  const connector = diagram.pages[0]?.shapes[0];
+  assert.ok(connector, 'expected connector to be parsed before write-back');
+
+  const updatedDiagram = replaceShapeInDiagram(diagram, {
+    pageEntry: diagram.pages[0].entry,
+    shape: {
+      ...connector,
+      beginX: 1,
+      beginY: 1,
+      endX: 5,
+      endY: 3,
+      text: 'Updated connector'
+    }
+  });
+  const updatedBytes = await writeVsdxDiagram(sourceBytes, updatedDiagram);
+  const updatedZip = await JSZip.loadAsync(updatedBytes);
+  const pageXml = await updatedZip.file('visio/pages/page1.xml')?.async('text');
+  assert.ok(pageXml, 'expected updated page XML for connector write-back');
+  assert.ok(!pageXml.includes('GUARD('), 'expected edited connector cells to drop stale formulas');
+  assert.ok(!pageXml.includes('IX="3"'), 'expected stale connector bend row to be removed');
+
+  const reread = await readVsdxDiagram(updatedBytes, 'connector-writeback-fixture.vsdx');
+  const rereadConnector = reread.pages[0]?.shapes[0];
+  assert.strictEqual(rereadConnector?.kind, 'connector');
+  assert.strictEqual(rereadConnector?.geometryPath, 'M 0 2 L 4 0');
+  assert.ok(Math.abs((rereadConnector?.x ?? 0) - 1) < 0.0001, 'expected connector bbox left to match new endpoints');
+  assert.ok(Math.abs((rereadConnector?.y ?? 0) - 1) < 0.0001, 'expected connector bbox bottom to match new endpoints');
+  assert.ok(Math.abs((rereadConnector?.width ?? 0) - 4) < 0.0001, 'expected connector width to match new endpoints');
+  assert.ok(Math.abs((rereadConnector?.height ?? 0) - 2) < 0.0001, 'expected connector height to match new endpoints');
+}
+
+async function verifiesStencilMasterFallbackPreview(): Promise<void> {
+  const zip = new JSZip();
+  zip.file('visio/masters/masters.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<Masters xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <Master ID="2" NameU="StencilShape"><Rel r:id="rId1"/></Master>
+</Masters>`);
+  zip.file('visio/masters/_rels/masters.xml.rels', `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.microsoft.com/visio/2010/relationships/master" Target="master1.xml"/>
+</Relationships>`);
+  zip.file('visio/masters/master1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<MasterContents>
+  <Shapes>
+    <Shape ID="5">
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Text>Stencil master</Text>
+      <Section N="Geometry" IX="0">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" V="2"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="3"><Cell N="X" V="2"/><Cell N="Y" V="1"/></Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</MasterContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'stencil-fixture.vssx');
+  assert.strictEqual(diagram.formatSupport, 'modern-package');
+  assert.strictEqual(diagram.pages.length, 1, 'expected stencil master to render as a preview page');
+  assert.ok(diagram.pages[0].entry.startsWith('__master__'), 'expected synthetic master preview page');
+  const shape = diagram.pages[0].shapes[0];
+  assert.ok(shape, 'expected stencil master shape to be exposed');
+  assert.strictEqual(shape.editable, false);
+  assert.ok(shape.geometryPath?.startsWith('M 0 1 L 2 1'), 'expected stencil master geometry to be rendered');
+}
+
+async function verifiesLegacyVisioBinaryGetsReadOnlyDiagram(): Promise<void> {
+  const sourceBytes = Buffer.from('legacy visio binary placeholder');
+  const diagram = await readVsdxDiagram(sourceBytes, 'legacy-fixture.vsd');
+  assert.strictEqual(diagram.formatSupport, 'legacy-binary');
+  assert.strictEqual(diagram.pages.length, 1, 'expected legacy binary to produce a read-only explanation page');
+  assert.strictEqual(diagram.pages[0].shapes[0]?.editable, false);
+  const writtenBytes = await writeVsdxDiagram(sourceBytes, diagram);
+  assert.strictEqual(Buffer.compare(sourceBytes, writtenBytes), 0, 'expected legacy binary save to preserve original bytes');
 }
 
 async function verifiesMasterFallbackWhenPageGeometryIsIncomplete(): Promise<void> {

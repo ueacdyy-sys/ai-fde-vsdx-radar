@@ -2,6 +2,21 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.9 - 2026-06-11
+
+### Added
+
+- Registered the interactive editor for modern Visio package formats: `.vsdx`, `.vsdm`, `.vssx`, `.vssm`, `.vstx`, and `.vstm`.
+- Added read-only fallback pages for legacy binary Visio files (`.vsd`, `.vss`, `.vst`) so they are recognized without pretending to be semantically editable.
+- Rendered stencil/template master shapes as read-only preview pages when a modern Visio package has no regular page XML.
+- Added editor model regression coverage for legacy binary recognition, stencil master preview fallback, and connector write-back.
+
+### Changed
+
+- Synchronized connector `Begin*`/`End*`, bounding cells, and Geometry rows during lightweight connector edits so saved files do not retain stale bent routes.
+- Cleared stale ShapeSheet formulas from cells that the editor writes explicitly, preventing Visio from recalculating over user edits.
+- Expanded workspace scanning, file watching, open dialogs, and context menus from `.vsdx` only to the modern Visio package family.
+
 ## 0.1.8 - 2026-06-11
 
 ### Changed
