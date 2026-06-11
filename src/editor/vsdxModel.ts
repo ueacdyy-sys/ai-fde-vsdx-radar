@@ -1434,10 +1434,21 @@ function writeShapeText(shape: any, text: string): void {
     return;
   }
   if (shape.Text && typeof shape.Text === 'object' && !Array.isArray(shape.Text)) {
-    shape.Text['#text'] = text;
+    shape.Text = preserveTextFormattingMarkers(shape.Text, text);
     return;
   }
   shape.Text = text;
+}
+
+function preserveTextFormattingMarkers(value: Record<string, unknown>, text: string): Record<string, unknown> {
+  const next: Record<string, unknown> = {};
+  for (const key of ['cp', 'pp', 'tp']) {
+    if (value[key] !== undefined) {
+      next[key] = cloneXml(value[key]);
+    }
+  }
+  next['#text'] = text;
+  return next;
 }
 
 function extractText(value: unknown): string {

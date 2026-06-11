@@ -2,6 +2,17 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.8 - 2026-06-11
+
+### Changed
+
+- Preserved Visio rich text formatting markers (`cp`, `pp`, and `tp`) when editing shape text through the interactive editor.
+- Replaced stale rich text payloads instead of appending new text alongside old nested text during VSDX write-back.
+
+### Added
+
+- Added editor model regression coverage for rich text write-back, XML escaping, and formatting marker preservation.
+
 ## 0.1.7 - 2026-06-11
 
 ### Added

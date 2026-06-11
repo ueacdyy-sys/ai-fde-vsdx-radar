@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import JSZip from 'jszip';
 
-import { readVsdxDiagram } from '../editor/vsdxModel';
+import { readVsdxDiagram, replaceShapeInDiagram, writeVsdxDiagram } from '../editor/vsdxModel';
 
 async function main(): Promise<void> {
   await verifiesMasterShapeGeometry();
@@ -10,6 +10,7 @@ async function main(): Promise<void> {
   await verifiesFormulaGeometryAndMasterRowInheritance();
   await verifiesColorFormulaAndNoPaint();
   await verifiesMasterChildShapeExpansion();
+  await verifiesRichTextWriteBackPreservesFormattingMarkers();
   await verifiesConnectorGeometryRows();
   await verifiesMasterFallbackWhenPageGeometryIsIncomplete();
   await verifiesEmbeddedImageRelationship();
@@ -308,6 +309,47 @@ async function verifiesMasterChildShapeExpansion(): Promise<void> {
   assert.ok(Math.abs((child.y ?? 0) - 4.75) < 0.0001, 'expected child y to be scaled into page coordinates');
   assert.ok(Math.abs((child.width ?? 0) - 1) < 0.0001, 'expected child width to be scaled');
   assert.ok(Math.abs((child.height ?? 0) - 0.5) < 0.0001, 'expected child height to be scaled');
+}
+
+async function verifiesRichTextWriteBackPreservesFormattingMarkers(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="RichText">
+      <Cell N="PinX" V="2"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Text><cp IX="0"/><pp IX="0"/><tp IX="0"/>Old formatted text</Text>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const sourceBytes = await zip.generateAsync({ type: 'nodebuffer' });
+  const diagram = await readVsdxDiagram(sourceBytes, 'rich-text-writeback-fixture.vsdx');
+  const shape = diagram.pages[0]?.shapes[0];
+  assert.ok(shape, 'expected rich text shape to be parsed');
+  assert.strictEqual(shape.text, 'Old formatted text');
+
+  const nextText = 'New <formatted> & checked';
+  const updatedDiagram = replaceShapeInDiagram(diagram, {
+    pageEntry: diagram.pages[0].entry,
+    shape: {
+      ...shape,
+      text: nextText
+    }
+  });
+  const updatedBytes = await writeVsdxDiagram(sourceBytes, updatedDiagram);
+  const updatedZip = await JSZip.loadAsync(updatedBytes);
+  const pageXml = await updatedZip.file('visio/pages/page1.xml')?.async('text');
+  assert.ok(pageXml, 'expected updated page XML');
+  assert.ok(pageXml.includes('<cp IX="0"'), 'expected character formatting marker to remain');
+  assert.ok(pageXml.includes('<pp IX="0"'), 'expected paragraph formatting marker to remain');
+  assert.ok(pageXml.includes('<tp IX="0"'), 'expected tab formatting marker to remain');
+  assert.ok(pageXml.includes('New &lt;formatted&gt; &amp; checked'), 'expected edited text to be escaped');
+  assert.ok(!pageXml.includes('Old formatted text'), 'expected old text payload to be removed');
 }
 
 async function verifiesMasterFallbackWhenPageGeometryIsIncomplete(): Promise<void> {
