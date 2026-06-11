@@ -55,6 +55,8 @@
     }
   },
   "activationEvents": [
+    "onCustomEditor:aiFdeVsdxRadar.interactiveEditor",
+    "onCommand:aiFdeVsdxRadar.openInteractiveEditor",
     "onCommand:aiFdeVsdxRadar.exportPreview",
     "onCommand:aiFdeVsdxRadar.runQa",
     "onCommand:aiFdeVsdxRadar.exportAndQa",
@@ -118,7 +120,28 @@
     "typescript": "^5.8.3"
   },
   "contributes": {
+    "configurationDefaults": {
+      "workbench.editorAssociations": {
+        "*.vsdx": "aiFdeVsdxRadar.interactiveEditor"
+      }
+    },
+    "customEditors": [
+      {
+        "viewType": "aiFdeVsdxRadar.interactiveEditor",
+        "displayName": "VSDX 交互预览 / Interactive VSDX Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.vsdx"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
     "commands": [
+      {
+        "command": "aiFdeVsdxRadar.openInteractiveEditor",
+        "title": "AI-FDE: 打开 VSDX 交互预览 / Open Interactive VSDX Editor"
+      },
       {
         "command": "aiFdeVsdxRadar.exportPreview",
         "title": "AI-FDE: Export VSDX Preview"
@@ -238,6 +261,11 @@
     ],
     "menus": {
       "explorer/context": [
+        {
+          "command": "aiFdeVsdxRadar.openInteractiveEditor",
+          "when": "resourceExtname == .vsdx",
+          "group": "navigation@10"
+        },
         {
           "command": "aiFdeVsdxRadar.exportAndQa",
           "when": "resourceExtname == .vsdx",

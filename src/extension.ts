@@ -21,6 +21,7 @@ import {
   type PreviewFreshnessSummaryItem
 } from './previewFreshnessSummary';
 import { PreviewExportResult, QaResult, RadarConfig } from './types';
+import { interactiveEditorViewType, VsdxInteractiveEditorProvider } from './editor/vsdxInteractiveEditor';
 
 let output: vscode.OutputChannel;
 const pendingAutoRuns = new Map<string, NodeJS.Timeout>();
@@ -319,6 +320,21 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(output);
   const decorations = new VsdxDecorationProvider();
   context.subscriptions.push(vscode.window.registerFileDecorationProvider(decorations));
+  context.subscriptions.push(VsdxInteractiveEditorProvider.register(context, output, getVsdxStatus));
+
+  context.subscriptions.push(vscode.commands.registerCommand('aiFdeVsdxRadar.openInteractiveEditor', async (uri?: vscode.Uri) => {
+    await runSafely(async () => {
+      const filePath = await resolveTargetPath(uri);
+      if (!filePath) {
+        return;
+      }
+      await vscode.commands.executeCommand(
+        'vscode.openWith',
+        vscode.Uri.file(filePath),
+        interactiveEditorViewType
+      );
+    });
+  }));
 
   context.subscriptions.push(vscode.commands.registerCommand('aiFdeVsdxRadar.exportPreview', async (uri?: vscode.Uri) => {
     await runSafely(async () => {
@@ -4424,13 +4440,13 @@ async function getVsdxStatus(filePath: string): Promise<VsdxStatus> {
   if (!previewExists) {
     return {
       badge: 'M',
-      color: 'charts.red',
-      tooltip: formatPreviewFreshnessTooltip('AI-FDE VSDX Radar: missing preview cache.', previewFreshnessReasons),
+      color: 'charts.yellow',
+      tooltip: formatPreviewFreshnessTooltip('AI-FDE VSDX Radar: missing preview cache; this is not a VSDX format or linter error.', previewFreshnessReasons),
       previewPath,
       qaPath,
       summaryPath,
-      errors: 1,
-      warnings: 0,
+      errors: 0,
+      warnings: 1,
       previewFreshnessReasons
     };
   }
