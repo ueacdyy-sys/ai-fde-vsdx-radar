@@ -12,6 +12,10 @@ async function main(): Promise<void> {
   await verifiesMasterChildShapeExpansion();
   await verifiesStencilMasterFallbackPreview();
   await verifiesLegacyVisioBinaryGetsReadOnlyDiagram();
+  await verifiesLegacyOpaqueVisioGetsReadOnlyDiagram();
+  await verifiesLegacyXmlDrawingPreviewAndWriteBack();
+  await verifiesLegacyXmlStencilFallbackPreview();
+  await verifiesRotatedShapeStaysEditableAndPreservesAngle();
   await verifiesRichTextWriteBackPreservesFormattingMarkers();
   await verifiesConnectorWriteBackSynchronizesGeometry();
   await verifiesConnectorGeometryRows();
@@ -456,6 +460,180 @@ async function verifiesLegacyVisioBinaryGetsReadOnlyDiagram(): Promise<void> {
   assert.strictEqual(diagram.pages[0].shapes[0]?.editable, false);
   const writtenBytes = await writeVsdxDiagram(sourceBytes, diagram);
   assert.strictEqual(Buffer.compare(sourceBytes, writtenBytes), 0, 'expected legacy binary save to preserve original bytes');
+}
+
+async function verifiesLegacyOpaqueVisioGetsReadOnlyDiagram(): Promise<void> {
+  const sourceBytes = Buffer.from('legacy web drawing placeholder');
+  const diagram = await readVsdxDiagram(sourceBytes, 'legacy-web-fixture.vdw');
+  assert.strictEqual(diagram.formatSupport, 'legacy-opaque');
+  assert.strictEqual(diagram.pages.length, 1, 'expected opaque legacy format to produce a read-only explanation page');
+  assert.strictEqual(diagram.pages[0].shapes[0]?.editable, false);
+  const writtenBytes = await writeVsdxDiagram(sourceBytes, diagram);
+  assert.strictEqual(Buffer.compare(sourceBytes, writtenBytes), 0, 'expected opaque legacy save to preserve original bytes');
+}
+
+async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
+  const source = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<VisioDocument>
+  <Pages>
+    <Page ID="1" Name="Legacy XML Page">
+      <PageSheet>
+        <PageProps>
+          <PageWidth>8.5</PageWidth>
+          <PageHeight>6</PageHeight>
+        </PageProps>
+      </PageSheet>
+      <Shapes>
+        <Shape ID="10" NameU="Rectangle">
+          <XForm>
+            <PinX>2</PinX>
+            <PinY>2</PinY>
+            <Width>2</Width>
+            <Height>1</Height>
+            <LocPinX>1</LocPinX>
+            <LocPinY>0.5</LocPinY>
+          </XForm>
+          <Text>Legacy text</Text>
+          <Geom IX="0">
+            <MoveTo IX="1"><X>0</X><Y>0</Y></MoveTo>
+            <LineTo IX="2"><X>2</X><Y>0</Y></LineTo>
+            <LineTo IX="3"><X>2</X><Y>1</Y></LineTo>
+            <LineTo IX="4"><X>0</X><Y>1</Y></LineTo>
+            <LineTo IX="5"><X>0</X><Y>0</Y></LineTo>
+          </Geom>
+        </Shape>
+        <Shape ID="11" NameU="Dynamic connector" OneD="1">
+          <XForm1D>
+            <BeginX>3</BeginX>
+            <BeginY>2</BeginY>
+            <EndX>5</EndX>
+            <EndY>4</EndY>
+          </XForm1D>
+        </Shape>
+      </Shapes>
+    </Page>
+  </Pages>
+</VisioDocument>`, 'utf8');
+
+  const diagram = await readVsdxDiagram(source, 'legacy-xml-fixture.vdx');
+  assert.strictEqual(diagram.formatSupport, 'legacy-xml');
+  assert.strictEqual(diagram.pages.length, 1, 'expected legacy XML page to be parsed');
+  const shape = diagram.pages[0]?.shapes.find(candidate => candidate.id === '10');
+  assert.ok(shape, 'expected legacy XML shape');
+  assert.strictEqual(shape.editable, true);
+  assert.strictEqual(shape.text, 'Legacy text');
+  assert.ok(shape.geometryPath?.startsWith('M 0 1 L 2 1'), 'expected legacy XML geometry to render');
+
+  const connector = diagram.pages[0]?.shapes.find(candidate => candidate.id === '11');
+  assert.ok(connector, 'expected legacy XML connector');
+  assert.strictEqual(connector.kind, 'connector');
+  assert.strictEqual(connector.editable, true);
+
+  const updated = replaceShapeInDiagram(replaceShapeInDiagram(diagram, {
+    pageEntry: diagram.pages[0].entry,
+    shape: {
+      ...shape,
+      x: 2.5,
+      y: 2.5,
+      text: 'Updated legacy XML'
+    }
+  }), {
+    pageEntry: diagram.pages[0].entry,
+    shape: {
+      ...connector,
+      endX: 6,
+      endY: 4,
+      text: 'Moved connector'
+    }
+  });
+
+  const updatedBytes = await writeVsdxDiagram(source, updated);
+  const reread = await readVsdxDiagram(updatedBytes, 'legacy-xml-fixture.vdx');
+  const rereadShape = reread.pages[0]?.shapes.find(candidate => candidate.id === '10');
+  const rereadConnector = reread.pages[0]?.shapes.find(candidate => candidate.id === '11');
+  assert.strictEqual(rereadShape?.text, 'Updated legacy XML');
+  assert.ok(Math.abs((rereadShape?.x ?? 0) - 2.5) < 0.0001, 'expected legacy XML shape x to write back');
+  assert.ok(Math.abs((rereadShape?.y ?? 0) - 2.5) < 0.0001, 'expected legacy XML shape y to write back');
+  assert.strictEqual(rereadConnector?.text, 'Moved connector');
+  assert.ok(Math.abs((rereadConnector?.endX ?? 0) - 6) < 0.0001, 'expected legacy XML connector endpoint to write back');
+}
+
+async function verifiesLegacyXmlStencilFallbackPreview(): Promise<void> {
+  const source = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<VisioDocument>
+  <Masters>
+    <Master ID="7" NameU="LegacyStencil">
+      <Shapes>
+        <Shape ID="3" NameU="StencilBox">
+          <XForm>
+            <PinX>1</PinX>
+            <PinY>0.5</PinY>
+            <Width>2</Width>
+            <Height>1</Height>
+            <LocPinX>1</LocPinX>
+            <LocPinY>0.5</LocPinY>
+          </XForm>
+          <Text>Legacy stencil</Text>
+          <Geom IX="0">
+            <MoveTo IX="1"><X>0</X><Y>0</Y></MoveTo>
+            <LineTo IX="2"><X>2</X><Y>0</Y></LineTo>
+            <LineTo IX="3"><X>2</X><Y>1</Y></LineTo>
+          </Geom>
+        </Shape>
+      </Shapes>
+    </Master>
+  </Masters>
+</VisioDocument>`, 'utf8');
+
+  const diagram = await readVsdxDiagram(source, 'legacy-stencil-fixture.vsx');
+  assert.strictEqual(diagram.formatSupport, 'legacy-xml');
+  assert.strictEqual(diagram.pages.length, 1, 'expected legacy XML stencil master preview page');
+  assert.ok(diagram.pages[0].entry.startsWith('__master__'), 'expected master fallback entry');
+  assert.strictEqual(diagram.pages[0].shapes[0]?.editable, false);
+  assert.strictEqual(diagram.pages[0].shapes[0]?.text, 'Legacy stencil');
+}
+
+async function verifiesRotatedShapeStaysEditableAndPreservesAngle(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Rotated">
+      <Cell N="PinX" V="2"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="Angle" V="0.7853981633974483"/>
+      <Text>Rotated text</Text>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const sourceBytes = await zip.generateAsync({ type: 'nodebuffer' });
+  const diagram = await readVsdxDiagram(sourceBytes, 'rotated-shape-fixture.vsdx');
+  const shape = diagram.pages[0]?.shapes[0];
+  assert.ok(shape, 'expected rotated shape to be parsed');
+  assert.strictEqual(shape.editable, true);
+  assert.ok(Math.abs((shape.angle ?? 0) - 0.7853981633974483) < 0.0000001, 'expected angle to be exposed');
+
+  const updatedDiagram = replaceShapeInDiagram(diagram, {
+    pageEntry: diagram.pages[0].entry,
+    shape: {
+      ...shape,
+      x: 3,
+      y: 3,
+      text: 'Rotated update'
+    }
+  });
+  const updatedBytes = await writeVsdxDiagram(sourceBytes, updatedDiagram);
+  const reread = await readVsdxDiagram(updatedBytes, 'rotated-shape-fixture.vsdx');
+  const rereadShape = reread.pages[0]?.shapes[0];
+  assert.strictEqual(rereadShape?.editable, true);
+  assert.strictEqual(rereadShape?.text, 'Rotated update');
+  assert.ok(Math.abs((rereadShape?.angle ?? 0) - 0.7853981633974483) < 0.0000001, 'expected angle to be preserved');
+  assert.ok(Math.abs((rereadShape?.x ?? 0) - 3) < 0.0001, 'expected rotated shape x to write back');
+  assert.ok(Math.abs((rereadShape?.y ?? 0) - 3) < 0.0001, 'expected rotated shape y to write back');
 }
 
 async function verifiesMasterFallbackWhenPageGeometryIsIncomplete(): Promise<void> {

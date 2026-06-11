@@ -3,6 +3,8 @@ import { existsSync } from 'fs';
 import JSZip from 'jszip';
 import { XMLParser } from 'fast-xml-parser';
 import { getPreviewFreshness as getCachedPreviewFreshness } from '../cache/cacheIndex';
+import { readVsdxDiagramFromFile, type VsdxEditorShape } from '../editor/vsdxModel';
+import { getVisioFormatSupport } from '../visioFormats';
 import { CacheIndex, QaPageStat, QaResult, QaRisk, RadarConfig } from '../types';
 
 const xmlParser = new XMLParser({
@@ -128,6 +130,10 @@ async function readPageStats(
   config: RadarConfig,
   risks: QaRisk[]
 ): Promise<QaPageStat[]> {
+  if (getVisioFormatSupport(sourcePath) === 'legacy-xml') {
+    return readLegacyXmlPageStats(sourcePath, config, risks);
+  }
+
   const buffer = await fs.readFile(sourcePath);
   const zip = await JSZip.loadAsync(buffer);
   const pageEntries = Object.keys(zip.files)
@@ -332,6 +338,254 @@ async function readPageStats(
   }
 
   return pages;
+}
+
+async function readLegacyXmlPageStats(
+  sourcePath: string,
+  config: RadarConfig,
+  risks: QaRisk[]
+): Promise<QaPageStat[]> {
+  const { diagram } = await readVsdxDiagramFromFile(sourcePath);
+  const connectCountByEntry = await readLegacyXmlConnectCounts(sourcePath);
+  return diagram.pages.map(page => {
+    const shapes = page.shapes;
+    const connectorShapes = shapes.filter(shape => shape.kind === 'connector');
+    const shapeBounds = shapes.filter(shape => shape.kind !== 'connector').map(getEditorShapeBounds).filter(isDefined);
+    const connectorSegments = connectorShapes.map(getEditorConnectorSegment).filter(isDefined);
+    const connectCount = connectCountByEntry.get(page.entry) ?? 0;
+    const textShapeCount = shapes.filter(editorShapeHasVisibleText).length;
+    const unlabeledShapeCount = shapes.filter(shape => shape.kind !== 'connector' && !editorShapeHasVisibleText(shape)).length;
+    const outOfBoundsShapeCount = shapeBounds.filter(shape => isEditorShapeOutOfBounds(shape, page.width, page.height)).length;
+    const diagonalConnectorCount = connectorSegments.filter(isDiagonalSegment).length;
+    const connectorCrossingCount = countConnectorCrossings(connectorSegments, shapeBounds);
+    const danglingConnectorCount = connectCount > 0 ? 0 : connectorSegments.length;
+    const straightConnectorCount = connectorSegments.filter(segment => segment.routeKind === 'straight').length;
+    const orthogonalConnectorCount = connectorSegments.filter(segment => segment.routeKind === 'orthogonal').length;
+    const complexConnectorCount = connectorSegments.filter(segment => segment.routeKind === 'complex').length;
+    const shapeOverlapPairCount = countShapeOverlaps(shapeBounds);
+    const pageCoverageRatio = calculatePageCoverageRatio(shapeBounds, page.width, page.height);
+    const pageRisks: QaRisk[] = [];
+
+    if (shapes.length === 0) {
+      pageRisks.push({
+        severity: 'error',
+        code: 'PAGE_EMPTY',
+        message: 'Page has no shapes.',
+        page: page.name
+      });
+    }
+
+    if (config.enableShapeDensityWarning && shapes.length > config.shapeDensityWarningThreshold) {
+      pageRisks.push({
+        severity: 'warning',
+        code: 'SHAPE_DENSITY_HIGH',
+        message: `Page has ${shapes.length} shapes, above threshold ${config.shapeDensityWarningThreshold}.`,
+        page: page.name
+      });
+    }
+
+    if (config.enableUnlabeledShapeWarning && unlabeledShapeCount > 0) {
+      pageRisks.push({
+        severity: 'warning',
+        code: 'UNLABELED_SHAPES',
+        message: `${unlabeledShapeCount} non-connector shape(s) have no visible text.`,
+        page: page.name
+      });
+    }
+
+    if (outOfBoundsShapeCount > 0) {
+      pageRisks.push({
+        severity: 'error',
+        code: 'SHAPE_OUT_OF_BOUNDS',
+        message: `${outOfBoundsShapeCount} shape(s) extend beyond the page boundary.`,
+        page: page.name
+      });
+    }
+
+    if (config.enableConnectorRatioWarning && shapes.length >= 6 && connectCount / Math.max(1, shapes.length) < config.connectorRatioWarningThreshold) {
+      pageRisks.push({
+        severity: 'warning',
+        code: 'CONNECTOR_RATIO_LOW',
+        message: `Connector ratio is low: connects=${connectCount}, shapes=${shapes.length}, threshold=${config.connectorRatioWarningThreshold}.`,
+        page: page.name
+      });
+    }
+
+    if (config.enableDiagonalConnectorWarning && diagonalConnectorCount > 0) {
+      pageRisks.push({
+        severity: 'warning',
+        code: 'DIAGONAL_CONNECTORS',
+        message: `${diagonalConnectorCount} connector(s) are diagonal; review for routing clarity.`,
+        page: page.name
+      });
+    }
+
+    if (config.enableConnectorCrossingWarning && connectorCrossingCount > 0) {
+      pageRisks.push({
+        severity: 'warning',
+        code: 'CONNECTOR_CROSSES_SHAPE',
+        message: `${connectorCrossingCount} connector segment(s) appear to cross through a non-connector shape.`,
+        page: page.name
+      });
+    }
+
+    if (config.enableDanglingConnectorWarning && danglingConnectorCount > 0) {
+      pageRisks.push({
+        severity: 'warning',
+        code: 'DANGLING_CONNECTORS',
+        message: `${danglingConnectorCount} connector(s) have no Connects relationship evidence in the Visio XML file.`,
+        page: page.name
+      });
+    }
+
+    if (config.enableShapeOverlapWarning && shapeOverlapPairCount > 0) {
+      pageRisks.push({
+        severity: 'warning',
+        code: 'SHAPE_OVERLAP',
+        message: `${shapeOverlapPairCount} non-connector shape pair(s) overlap; review layout clarity.`,
+        page: page.name
+      });
+    }
+
+    if (config.enablePageCoverageWarning && shapes.length > 0 && pageCoverageRatio < config.pageCoverageLowWarningThreshold) {
+      pageRisks.push({
+        severity: 'warning',
+        code: 'PAGE_COVERAGE_LOW',
+        message: `Page coverage is low: ${formatRatio(pageCoverageRatio)}, threshold=${formatRatio(config.pageCoverageLowWarningThreshold)}.`,
+        page: page.name
+      });
+    } else if (config.enablePageCoverageWarning && pageCoverageRatio > config.pageCoverageHighWarningThreshold) {
+      pageRisks.push({
+        severity: 'warning',
+        code: 'PAGE_COVERAGE_HIGH',
+        message: `Page coverage is high: ${formatRatio(pageCoverageRatio)}, threshold=${formatRatio(config.pageCoverageHighWarningThreshold)}.`,
+        page: page.name
+      });
+    }
+
+    if (diagram.readOnlyReason) {
+      pageRisks.push({
+        severity: 'warning',
+        code: 'LEGACY_XML_READONLY_PREVIEW',
+        message: diagram.readOnlyReason,
+        page: page.name
+      });
+    }
+
+    risks.push(...pageRisks);
+    return {
+      name: page.name,
+      entry: page.entry,
+      width: page.width,
+      height: page.height,
+      shapeCount: shapes.length,
+      textShapeCount,
+      unlabeledShapeCount,
+      oneDShapeCount: connectorShapes.length,
+      connectCount,
+      duplicateShapeIdCount: 0,
+      outOfBoundsShapeCount,
+      diagonalConnectorCount,
+      connectorCrossingCount,
+      danglingConnectorCount,
+      straightConnectorCount,
+      orthogonalConnectorCount,
+      complexConnectorCount,
+      shapeOverlapPairCount,
+      pageCoverageRatio,
+      riskCount: pageRisks.length
+    };
+  });
+}
+
+async function readLegacyXmlConnectCounts(sourcePath: string): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  try {
+    const xml = await fs.readFile(sourcePath, 'utf8');
+    const parsed = xmlParser.parse(xml.replace(/^\uFEFF/, ''));
+    const document = parsed?.VisioDocument ?? parsed?.['VisioDocument'];
+    toArray(document?.Pages?.Page).forEach((page, index) => {
+      counts.set(legacyXmlPageEntry(page, index), toArray(page?.Connects?.Connect).length);
+    });
+  } catch {
+    return counts;
+  }
+  return counts;
+}
+
+function legacyXmlPageEntry(page: any, index: number): string {
+  return `xml/pages/${normalizedId(page?.ID) ?? index + 1}`;
+}
+
+function editorShapeHasVisibleText(shape: VsdxEditorShape): boolean {
+  return Boolean(shape.text && shape.text.replace(/\s+/g, '').length > 0);
+}
+
+function getEditorShapeBounds(shape: VsdxEditorShape): ShapeBounds | undefined {
+  if (shape.x === undefined || shape.y === undefined || shape.width === undefined || shape.height === undefined) {
+    return undefined;
+  }
+
+  const angle = Number(shape.angle ?? 0);
+  if (!Number.isFinite(angle) || Math.abs(angle) < 0.0001) {
+    return {
+      shapeId: shape.id,
+      left: shape.x,
+      right: shape.x + shape.width,
+      bottom: shape.y,
+      top: shape.y + shape.height
+    };
+  }
+
+  const centerX = shape.x + shape.width / 2;
+  const centerY = shape.y + shape.height / 2;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const corners = [
+    { x: shape.x, y: shape.y },
+    { x: shape.x + shape.width, y: shape.y },
+    { x: shape.x + shape.width, y: shape.y + shape.height },
+    { x: shape.x, y: shape.y + shape.height }
+  ].map(point => {
+    const dx = point.x - centerX;
+    const dy = point.y - centerY;
+    return {
+      x: centerX + dx * cos - dy * sin,
+      y: centerY + dx * sin + dy * cos
+    };
+  });
+
+  return boundsFromPoints(shape.id, corners);
+}
+
+function isEditorShapeOutOfBounds(shape: ShapeBounds, pageWidth: number, pageHeight: number): boolean {
+  return shape.left < 0 || shape.bottom < 0 || shape.right > pageWidth || shape.top > pageHeight;
+}
+
+function getEditorConnectorSegment(shape: VsdxEditorShape): ConnectorSegment | undefined {
+  const x1 = shape.beginX;
+  const y1 = shape.beginY;
+  const x2 = shape.endX;
+  const y2 = shape.endY;
+  if ([x1, y1, x2, y2].some(value => value === undefined)) {
+    return undefined;
+  }
+
+  const routePoints = [
+    { x: x1!, y: y1! },
+    { x: x2!, y: y2! }
+  ];
+  return {
+    shapeId: shape.id,
+    connectedShapeIds: new Set<string>(),
+    x1: x1!,
+    y1: y1!,
+    x2: x2!,
+    y2: y2!,
+    routeKind: classifyConnectorRoute(routePoints),
+    routeSegmentCount: 1,
+    routePoints
+  };
 }
 
 interface DuplicateShapeId {

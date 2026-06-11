@@ -1,8 +1,8 @@
 {
   "name": "ai-fde-vsdx-radar",
   "displayName": "Visio Preview & QA Linter",
-  "description": "在 VS Code 中预览、轻量编辑和 QA Microsoft Visio 现代包格式文件。",
-  "version": "0.1.9",
+  "description": "在 VS Code 中预览、轻量编辑和 QA Microsoft Visio 文件。",
+  "version": "0.1.10",
   "publisher": "ai-fde-lab",
   "license": "SEE LICENSE IN LICENSE.txt",
   "author": {
@@ -20,6 +20,9 @@
     "vsdm",
     "vssx",
     "vstx",
+    "vdx",
+    "vsx",
+    "vtx",
     "visio",
     "diagram",
     "preview",
@@ -131,9 +134,15 @@
         "*.vssm": "aiFdeVsdxRadar.interactiveEditor",
         "*.vstx": "aiFdeVsdxRadar.interactiveEditor",
         "*.vstm": "aiFdeVsdxRadar.interactiveEditor",
+        "*.vdx": "aiFdeVsdxRadar.interactiveEditor",
+        "*.vsx": "aiFdeVsdxRadar.interactiveEditor",
+        "*.vtx": "aiFdeVsdxRadar.interactiveEditor",
         "*.vsd": "aiFdeVsdxRadar.interactiveEditor",
         "*.vss": "aiFdeVsdxRadar.interactiveEditor",
-        "*.vst": "aiFdeVsdxRadar.interactiveEditor"
+        "*.vst": "aiFdeVsdxRadar.interactiveEditor",
+        "*.vdw": "aiFdeVsdxRadar.interactiveEditor",
+        "*.vwi": "aiFdeVsdxRadar.interactiveEditor",
+        "*.vsw": "aiFdeVsdxRadar.interactiveEditor"
       }
     },
     "customEditors": [
@@ -160,6 +169,15 @@
             "filenamePattern": "*.vstm"
           },
           {
+            "filenamePattern": "*.vdx"
+          },
+          {
+            "filenamePattern": "*.vsx"
+          },
+          {
+            "filenamePattern": "*.vtx"
+          },
+          {
             "filenamePattern": "*.vsd"
           },
           {
@@ -167,6 +185,15 @@
           },
           {
             "filenamePattern": "*.vst"
+          },
+          {
+            "filenamePattern": "*.vdw"
+          },
+          {
+            "filenamePattern": "*.vwi"
+          },
+          {
+            "filenamePattern": "*.vsw"
           }
         ],
         "priority": "default"
@@ -298,47 +325,47 @@
       "explorer/context": [
         {
           "command": "aiFdeVsdxRadar.openInteractiveEditor",
-          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm|vsd|vss|vst)$/i",
+          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm|vdx|vsx|vtx|vsd|vss|vst|vdw|vwi|vsw)$/i",
           "group": "navigation@10"
         },
         {
           "command": "aiFdeVsdxRadar.exportAndQa",
-          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm)$/i",
+          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm|vdx|vsx|vtx)$/i",
           "group": "navigation@20"
         },
         {
           "command": "aiFdeVsdxRadar.exportPreview",
-          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm|vsd|vss|vst)$/i",
+          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm|vdx|vsx|vtx|vsd|vss|vst|vdw|vwi|vsw)$/i",
           "group": "navigation@21"
         },
         {
           "command": "aiFdeVsdxRadar.runQa",
-          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm)$/i",
+          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm|vdx|vsx|vtx)$/i",
           "group": "navigation@22"
         },
         {
           "command": "aiFdeVsdxRadar.openPreview",
-          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm|vsd|vss|vst)$/i",
+          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm|vdx|vsx|vtx|vsd|vss|vst|vdw|vwi|vsw)$/i",
           "group": "navigation@23"
         },
         {
           "command": "aiFdeVsdxRadar.openAllPreviews",
-          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm|vsd|vss|vst)$/i",
+          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm|vdx|vsx|vtx|vsd|vss|vst|vdw|vwi|vsw)$/i",
           "group": "navigation@24"
         },
         {
           "command": "aiFdeVsdxRadar.openQaReport",
-          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm)$/i",
+          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm|vdx|vsx|vtx)$/i",
           "group": "navigation@25"
         },
         {
           "command": "aiFdeVsdxRadar.showStatus",
-          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm|vsd|vss|vst)$/i",
+          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm|vdx|vsx|vtx|vsd|vss|vst|vdw|vwi|vsw)$/i",
           "group": "navigation@26"
         },
         {
           "command": "aiFdeVsdxRadar.revealArtifacts",
-          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm|vsd|vss|vst)$/i",
+          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm|vdx|vsx|vtx|vsd|vss|vst|vdw|vwi|vsw)$/i",
           "group": "navigation@27"
         }
       ]

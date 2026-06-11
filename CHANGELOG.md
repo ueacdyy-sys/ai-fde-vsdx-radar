@@ -2,6 +2,22 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.10 - 2026-06-12
+
+### Added
+
+- Added a unified Visio format registry for semantic formats, legacy XML formats, legacy binary files, and legacy opaque containers.
+- Registered the interactive editor, Explorer commands, open dialogs, workspace scanning, and file watcher for Visio XML files (`.vdx`, `.vsx`, `.vtx`).
+- Added read-only recognition pages for additional legacy Visio containers (`.vdw`, `.vwi`, `.vsw`) instead of mis-parsing them as modern packages.
+- Added semantic preview, lightweight shape/text write-back, connector endpoint write-back, and QA statistics for basic Visio XML drawings.
+- Added read-only master preview fallback for Visio XML stencil/template files that contain masters but no regular pages.
+- Added editor/QA regression coverage for Visio XML drawings, Visio XML stencil fallback, opaque legacy formats, and rotated shape write-back.
+
+### Changed
+
+- Simple rotated shapes are now editable: the editor renders their stored `Angle`, allows dragging and text edits, and preserves the angle on save.
+- Legacy conversion guidance now recommends either modern Visio packages (`.vsdx/.vsdm/.vssx/.vssm/.vstx/.vstm`) or Visio XML (`.vdx/.vsx/.vtx`) for semantic preview and lightweight editing.
+
 ## 0.1.9 - 2026-06-11
 
 ### Added

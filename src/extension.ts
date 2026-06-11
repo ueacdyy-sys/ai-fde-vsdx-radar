@@ -11,10 +11,10 @@ import {
   allVisioFileGlob,
   allVisioOpenDialogExtensions,
   isLegacyVisioPath,
-  isModernVisioPath,
+  isSemanticVisioPath,
   isVisioPath,
-  modernVisioFileGlob,
-  modernVisioOpenDialogExtensions,
+  semanticVisioFileGlob,
+  semanticVisioOpenDialogExtensions,
   resolvePreviewPath,
   resolveQaPath,
   resolveQaSummaryPath,
@@ -740,7 +740,7 @@ export function deactivate(): void {
 }
 
 async function resolveTargetPath(uri?: vscode.Uri, options: { allowLegacy?: boolean } = {}): Promise<string | undefined> {
-  if (uri?.fsPath && isModernVisioPath(uri.fsPath)) {
+  if (uri?.fsPath && isSemanticVisioPath(uri.fsPath)) {
     return uri.fsPath;
   }
   if (uri?.fsPath && isLegacyVisioPath(uri.fsPath)) {
@@ -756,9 +756,9 @@ async function resolveTargetPath(uri?: vscode.Uri, options: { allowLegacy?: bool
     canSelectFolders: false,
     canSelectMany: false,
     filters: {
-      [options.allowLegacy ? 'Visio files' : 'Modern Visio packages']: options.allowLegacy
+      [options.allowLegacy ? 'Visio files' : 'Semantic Visio files']: options.allowLegacy
         ? allVisioOpenDialogExtensions
-        : modernVisioOpenDialogExtensions
+        : semanticVisioOpenDialogExtensions
     }
   });
 
@@ -773,7 +773,7 @@ async function resolveTargetPath(uri?: vscode.Uri, options: { allowLegacy?: bool
 
 async function showLegacyVisioWarning(): Promise<void> {
   await vscode.window.showWarningMessage(
-    'AI-FDE VSDX Radar: legacy binary Visio files (.vsd/.vss/.vst) cannot be semantically QA-checked or edited yet. Convert them to .vsdx/.vsdm/.vssx/.vssm/.vstx/.vstm for semantic preview and lightweight editing.'
+    'AI-FDE VSDX Radar: this legacy Visio file cannot be semantically QA-checked or edited yet. Convert it to a modern Visio package (.vsdx/.vsdm/.vssx/.vssm/.vstx/.vstm) or Visio XML (.vdx/.vsx/.vtx) for semantic preview and lightweight editing.'
   );
 }
 
@@ -2185,7 +2185,7 @@ async function collectWorkspaceReportItems(): Promise<WorkspaceReportCollection>
     : path.join(workspaceFolders[0].uri.fsPath, config.outputDirectory);
   const notesPath = resolveWorkspaceNotesPath(reportRoot);
   const notes = await loadWorkspaceRiskNotes(notesPath);
-  const uris = await vscode.workspace.findFiles(modernVisioFileGlob, '**/{.aifde,.git,node_modules}/**');
+  const uris = await vscode.workspace.findFiles(semanticVisioFileGlob, '**/{.aifde,.git,node_modules}/**');
   const items: WorkspaceReportItem[] = [];
 
   for (const uri of uris.sort((a, b) => a.fsPath.localeCompare(b.fsPath))) {
@@ -4429,7 +4429,7 @@ function resolvePreviewOpenPaths(result: PreviewExportResult): string[] {
 
 function scheduleAutoExport(extensionRoot: string, uri: vscode.Uri, decorations: VsdxDecorationProvider): void {
   const config = getRadarConfig();
-  if (!config.autoExportOnSave || !isModernVisioPath(uri.fsPath)) {
+  if (!config.autoExportOnSave || !isSemanticVisioPath(uri.fsPath)) {
     return;
   }
 
@@ -4464,14 +4464,14 @@ async function getVsdxStatus(filePath: string): Promise<VsdxStatus> {
   const previewFresh = previewExists && previewFreshness.fresh;
   const previewFreshnessReasons = previewFreshness.reasons;
 
-  if (isLegacyVisioPath(filePath)) {
+  if (isLegacyVisioPath(filePath) && !isSemanticVisioPath(filePath)) {
     return {
       badge: previewExists && previewFresh ? 'R' : previewExists ? 'S' : 'M',
       color: 'charts.yellow',
       tooltip: previewExists && previewFresh
-        ? 'AI-FDE VSDX Radar: legacy binary Visio file. Preview export is available, but semantic QA and lightweight editing require conversion to a modern Visio package.'
+        ? 'AI-FDE VSDX Radar: legacy Visio file. Preview export is available, but semantic QA and lightweight editing require conversion to a modern Visio package or Visio XML.'
         : formatPreviewFreshnessTooltip(
-          'AI-FDE VSDX Radar: legacy binary Visio file. Export a preview if needed; semantic QA and lightweight editing require conversion to a modern Visio package.',
+          'AI-FDE VSDX Radar: legacy Visio file. Export a preview if needed; semantic QA and lightweight editing require conversion to a modern Visio package or Visio XML.',
           previewFreshnessReasons
         ),
       previewPath,

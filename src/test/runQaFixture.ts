@@ -56,8 +56,11 @@ async function main(): Promise<void> {
   const duplicateConnectorIdSamePageCorpusPreviewPath = path.join(root, '.aifde', 'previews', 'duplicate-connector-id-same-page-corpus.test.png');
   const invalidConnectsMultipageCorpusPath = path.join(fixtureDir, 'invalid-connects-multipage-corpus.vsdx');
   const invalidConnectsMultipageCorpusPreviewPath = path.join(root, '.aifde', 'previews', 'invalid-connects-multipage-corpus.test.png');
+  const legacyXmlPath = path.join(root, '.aifde', 'fixtures', 'legacy-xml-corpus.vdx');
+  const legacyXmlPreviewPath = path.join(root, '.aifde', 'previews', 'legacy-xml-corpus.test.png');
   await fs.mkdir(fixtureDir, { recursive: true });
   await fs.mkdir(path.dirname(previewPath), { recursive: true });
+  await fs.mkdir(path.dirname(legacyXmlPath), { recursive: true });
   await fs.writeFile(previewPath, VALID_PREVIEW_PNG);
   await fs.writeFile(routeCorpusPreviewPath, VALID_PREVIEW_PNG);
   await fs.writeFile(businessCorpusPreviewPath, VALID_PREVIEW_PNG);
@@ -77,6 +80,7 @@ async function main(): Promise<void> {
   await fs.writeFile(duplicateShapeIdSamePageGroupCorpusPreviewPath, VALID_PREVIEW_PNG);
   await fs.writeFile(duplicateConnectorIdSamePageCorpusPreviewPath, VALID_PREVIEW_PNG);
   await fs.writeFile(invalidConnectsMultipageCorpusPreviewPath, VALID_PREVIEW_PNG);
+  await fs.writeFile(legacyXmlPreviewPath, VALID_PREVIEW_PNG);
   await writeMinimalVsdx(fixturePath);
   await writeConnectorRouteCorpusVsdx(routeCorpusPath);
   await writeBusinessProcessCorpusVsdx(businessCorpusPath);
@@ -94,6 +98,7 @@ async function main(): Promise<void> {
   await writeDuplicateShapeIdSamePageGroupCorpusVsdx(duplicateShapeIdSamePageGroupCorpusPath);
   await writeDuplicateConnectorIdSamePageCorpusVsdx(duplicateConnectorIdSamePageCorpusPath);
   await writeInvalidConnectsMultipageCorpusVsdx(invalidConnectsMultipageCorpusPath);
+  await writeLegacyXmlCorpus(legacyXmlPath);
 
   const cacheIndex: CacheIndex = {
     version: 1,
@@ -138,6 +143,14 @@ async function main(): Promise<void> {
   assert(result.stats.textShapeCount === 4, 'expected four text shapes');
   assert(result.stats.unlabeledShapeCount === 1, 'expected one unlabeled shape');
   assert(result.stats.oneDShapeCount === 3, 'expected three OneD shapes');
+
+  const legacyXmlResult = await analyzeVsdx(legacyXmlPath, legacyXmlPreviewPath, await createSinglePreviewCacheIndex(legacyXmlPath, legacyXmlPreviewPath), config);
+  assert(legacyXmlResult.stats.pageCount === 1, 'expected one legacy XML page');
+  assert(legacyXmlResult.stats.shapeCount === 2, 'expected two legacy XML shapes');
+  assert(legacyXmlResult.stats.textShapeCount === 1, 'expected one legacy XML text shape');
+  assert(legacyXmlResult.stats.oneDShapeCount === 1, 'expected one legacy XML connector');
+  assert(legacyXmlResult.stats.connectCount === 2, 'expected legacy XML connect evidence to be counted');
+  assert(legacyXmlResult.stats.danglingConnectorCount === 0, 'expected legacy XML connector with connect evidence not to be dangling');
   assert(result.stats.connectCount === 2, 'expected two connects');
   assert(result.stats.outOfBoundsShapeCount === 1, 'expected one out-of-bounds shape');
   assert(result.stats.diagonalConnectorCount === 1, 'expected one diagonal connector');
@@ -689,6 +702,47 @@ async function createSinglePreviewCacheIndex(sourcePath: string, previewPath: st
       }
     }
   };
+}
+
+async function writeLegacyXmlCorpus(outputPath: string): Promise<void> {
+  await fs.writeFile(outputPath, `<?xml version="1.0" encoding="UTF-8"?>
+<VisioDocument>
+  <Pages>
+    <Page ID="1" Name="Legacy XML QA">
+      <PageSheet>
+        <PageProps>
+          <PageWidth>8.5</PageWidth>
+          <PageHeight>6</PageHeight>
+        </PageProps>
+      </PageSheet>
+      <Shapes>
+        <Shape ID="1" NameU="Rectangle">
+          <XForm>
+            <PinX>2</PinX>
+            <PinY>2</PinY>
+            <Width>2</Width>
+            <Height>1</Height>
+            <LocPinX>1</LocPinX>
+            <LocPinY>0.5</LocPinY>
+          </XForm>
+          <Text>Legacy XML QA shape</Text>
+        </Shape>
+        <Shape ID="2" NameU="Dynamic connector" OneD="1">
+          <XForm1D>
+            <BeginX>3</BeginX>
+            <BeginY>2</BeginY>
+            <EndX>5</EndX>
+            <EndY>2</EndY>
+          </XForm1D>
+        </Shape>
+      </Shapes>
+      <Connects>
+        <Connect FromSheet="2" ToSheet="1"/>
+        <Connect FromSheet="1" ToSheet="2"/>
+      </Connects>
+    </Page>
+  </Pages>
+</VisioDocument>`, 'utf8');
 }
 
 function createSolidRgbPng(red: number, green: number, blue: number): Buffer {

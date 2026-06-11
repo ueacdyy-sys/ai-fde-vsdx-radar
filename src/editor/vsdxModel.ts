@@ -51,6 +51,7 @@ export interface VsdxEditorShape {
   y?: number;
   width?: number;
   height?: number;
+  angle?: number;
   beginX?: number;
   beginY?: number;
   endX?: number;
@@ -112,6 +113,52 @@ interface EditorShapeContext {
   readOnlyReason?: string;
 }
 
+const legacyXmlCellNames = new Set([
+  'PinX',
+  'PinY',
+  'Width',
+  'Height',
+  'LocPinX',
+  'LocPinY',
+  'Angle',
+  'FlipX',
+  'FlipY',
+  'BeginX',
+  'BeginY',
+  'EndX',
+  'EndY',
+  'LineWeight',
+  'LineColor',
+  'LinePattern',
+  'FillForegnd',
+  'FillPattern',
+  'PageWidth',
+  'PageHeight'
+]);
+
+const legacyXmlGeometryCellNames = new Set(['X', 'Y', 'A', 'B', 'C', 'D', 'E']);
+const legacyXmlGeometryRowNames = new Set([
+  'MoveTo',
+  'LineTo',
+  'ArcTo',
+  'EllipticalArcTo',
+  'QuadBezTo',
+  'CubBezTo',
+  'PolylineTo',
+  'NURBSTo',
+  'SplineStart',
+  'SplineKnot',
+  'Ellipse',
+  'InfiniteLine',
+  'RelMoveTo',
+  'RelLineTo',
+  'RelArcTo',
+  'RelEllipticalArcTo',
+  'RelQuadBezTo',
+  'RelCubBezTo',
+  'RelPolylineTo'
+]);
+
 export async function readVsdxDiagramFromFile(filePath: string): Promise<{ bytes: Buffer; diagram: VsdxEditorDiagram }> {
   const bytes = await fs.readFile(filePath);
   return {
@@ -125,8 +172,17 @@ export async function readVsdxDiagram(bytes: Buffer, sourceName: string): Promis
   if (formatSupport === 'legacy-binary') {
     return createUnsupportedVisioDiagram(
       sourceName,
-      'Legacy binary Visio files (.vsd/.vss/.vst) are recognized, but semantic preview and lightweight editing require a modern Visio package such as .vsdx, .vsdm, .vssx, .vssm, .vstx, or .vstm.'
+      'Legacy binary Visio files (.vsd/.vss/.vst) are recognized, but semantic preview and lightweight editing require a modern Visio package (.vsdx/.vsdm/.vssx/.vssm/.vstx/.vstm) or a Visio XML file (.vdx/.vsx/.vtx).'
     );
+  }
+  if (formatSupport === 'legacy-opaque') {
+    return createUnsupportedVisioDiagram(
+      sourceName,
+      'This legacy Visio container is recognized, but semantic preview and lightweight editing require a modern Visio package (.vsdx/.vsdm/.vssx/.vssm/.vstx/.vstm) or a Visio XML file (.vdx/.vsx/.vtx).'
+    );
+  }
+  if (formatSupport === 'legacy-xml') {
+    return readLegacyXmlDiagram(bytes, sourceName);
   }
 
   let zip: JSZip;
@@ -168,7 +224,7 @@ export async function readVsdxDiagram(bytes: Buffer, sourceName: string): Promis
       shapes
     };
     const unsupportedNote = unsupportedCount > 0
-      ? `${page.name}: ${unsupportedCount} shape(s) are shown as read-only because they use grouping, rotation, or incomplete geometry.`
+      ? `${page.name}: ${unsupportedCount} shape(s) are shown as read-only because they use grouping or incomplete geometry.`
       : undefined;
     return { page, unsupportedNote };
   }));
@@ -195,6 +251,250 @@ export async function readVsdxDiagram(bytes: Buffer, sourceName: string): Promis
     pages,
     unsupportedNotes
   };
+}
+
+function readLegacyXmlDiagram(bytes: Buffer, sourceName: string): VsdxEditorDiagram {
+  let parsed: any;
+  try {
+    parsed = xmlParser.parse(bytes.toString('utf8').replace(/^\uFEFF/, ''));
+  } catch (error) {
+    return createUnsupportedVisioDiagram(
+      sourceName,
+      `This Visio XML file could not be parsed: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+
+  const document = parsed?.VisioDocument ?? parsed?.['VisioDocument'];
+  if (!document) {
+    return createUnsupportedVisioDiagram(sourceName, 'This Visio XML file does not contain a VisioDocument root element.');
+  }
+
+  const masterShapes = readLegacyXmlMasterShapes(document);
+  const pageResults = toArray(document?.Pages?.Page).map((page, index) => {
+    const normalized = normalizeLegacyXmlPage(page, index);
+    const shapes = collectEditorShapes(toArray(normalized.pageContents?.Shapes?.Shape), {
+      masterShapes,
+      imageDataUriByRelId: new Map()
+    });
+    const unsupportedCount = shapes.filter(shape => !shape.editable).length;
+    const pageResult = {
+      id: normalized.id,
+      entry: normalized.entry,
+      name: normalized.name,
+      width: validPageSize(normalized.width, 8),
+      height: validPageSize(normalized.height, 6),
+      shapes
+    };
+    const unsupportedNote = unsupportedCount > 0
+      ? `${pageResult.name}: ${unsupportedCount} shape(s) are shown as read-only because they use grouping or incomplete geometry.`
+      : undefined;
+    return { page: pageResult, unsupportedNote };
+  });
+
+  const pages = pageResults.map(result => result.page);
+  const unsupportedNotes = pageResults.map(result => result.unsupportedNote).filter(isDefined);
+  if (pages.length === 0 && masterShapes.size > 0) {
+    return {
+      sourceName,
+      formatSupport: 'legacy-xml',
+      readOnlyReason: 'This Visio XML stencil/template has no regular pages. Master shapes are shown as read-only preview pages.',
+      pages: createMasterPreviewPages(masterShapes),
+      unsupportedNotes: [
+        'No regular Visio XML pages were found. Showing read-only master/stencil previews instead.',
+        ...unsupportedNotes
+      ]
+    };
+  }
+
+  return {
+    sourceName,
+    formatSupport: 'legacy-xml',
+    pages,
+    unsupportedNotes
+  };
+}
+
+function readLegacyXmlMasterShapes(document: any): Map<string, any> {
+  const masterShapes = new Map<string, any>();
+  for (const master of toArray(document?.Masters?.Master)) {
+    const id = normalizedId(master?.ID);
+    const firstShape = toArray(master?.Shapes?.Shape)[0] ?? master?.Shape;
+    if (!id || !firstShape) {
+      continue;
+    }
+
+    masterShapes.set(id, {
+      ...normalizeLegacyXmlShape(firstShape),
+      Name: master?.Name ?? firstShape?.Name,
+      NameU: master?.NameU ?? firstShape?.NameU
+    });
+  }
+  return masterShapes;
+}
+
+function normalizeLegacyXmlPage(page: any, index: number): {
+  id: string;
+  entry: string;
+  name: string;
+  width?: number;
+  height?: number;
+  pageContents: any;
+} {
+  const pageCells = collectLegacyXmlCells(page?.PageSheet, legacyXmlCellNames);
+  return {
+    id: normalizedId(page?.ID) ?? `page-${index + 1}`,
+    entry: legacyXmlPageEntry(page, index),
+    name: String(page?.Name ?? page?.NameU ?? `Page-${index + 1}`),
+    width: readCellNumber(pageCells, 'PageWidth'),
+    height: readCellNumber(pageCells, 'PageHeight'),
+    pageContents: {
+      Shapes: {
+        Shape: toArray(page?.Shapes?.Shape).map(normalizeLegacyXmlShape)
+      }
+    }
+  };
+}
+
+function legacyXmlPageEntry(page: any, index: number): string {
+  return `xml/pages/${normalizedId(page?.ID) ?? index + 1}`;
+}
+
+function normalizeLegacyXmlShape(shape: any): any {
+  const normalized = cloneXml(shape);
+  normalized.Cell = mergeCells(
+    toArray(normalized?.Cell),
+    collectLegacyXmlCells(shape, legacyXmlCellNames)
+  );
+
+  const geometrySections = legacyXmlGeometrySections(shape);
+  if (geometrySections.length > 0) {
+    normalized.Section = [
+      ...toArray(normalized?.Section),
+      ...geometrySections
+    ];
+  }
+
+  const childShapes = toArray(shape?.Shapes?.Shape);
+  if (childShapes.length > 0) {
+    normalized.Shapes = {
+      ...normalized.Shapes,
+      Shape: childShapes.map(normalizeLegacyXmlShape)
+    };
+  }
+
+  return normalized;
+}
+
+function collectLegacyXmlCells(source: any, names: Set<string>): any[] {
+  if (!source || typeof source !== 'object') {
+    return [];
+  }
+
+  const cells: any[] = [];
+  const groups = [
+    source,
+    source.XForm,
+    source.XForm1D,
+    source.Line,
+    source.Fill,
+    source.TextXForm,
+    source.PageProps,
+    source.Layout,
+    source.Misc,
+    source.ShapeLayout
+  ].filter(isDefined);
+
+  for (const group of groups) {
+    if (!group || typeof group !== 'object') {
+      continue;
+    }
+    for (const [key, value] of Object.entries(group)) {
+      if (!names.has(key)) {
+        continue;
+      }
+      const cell = legacyXmlElementToCell(key, value);
+      if (cell) {
+        cells.push(cell);
+      }
+    }
+  }
+
+  return mergeCells([], cells);
+}
+
+function legacyXmlElementToCell(name: string, value: unknown): any | undefined {
+  const text = readLegacyXmlElementValue(value);
+  const formula = readLegacyXmlElementFormula(value);
+  if (text === undefined && formula === undefined) {
+    return undefined;
+  }
+
+  const cell: any = { N: name };
+  if (text !== undefined) {
+    cell.V = text;
+  }
+  if (formula !== undefined) {
+    cell.F = formula;
+  }
+  return cell;
+}
+
+function readLegacyXmlElementValue(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return readLegacyXmlElementValue(value[0]);
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    for (const key of ['V', '#text']) {
+      const nested = record[key];
+      if (typeof nested === 'string' || typeof nested === 'number' || typeof nested === 'boolean') {
+        return String(nested);
+      }
+    }
+  }
+  return undefined;
+}
+
+function readLegacyXmlElementFormula(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const formula = (value as Record<string, unknown>).F;
+  return typeof formula === 'string' && formula.trim().length > 0 ? formula : undefined;
+}
+
+function legacyXmlGeometrySections(shape: any): any[] {
+  return toArray(shape?.Geom).map((geom, index) => {
+    const rows: any[] = [];
+    for (const [key, value] of Object.entries(geom ?? {})) {
+      if (!legacyXmlGeometryRowNames.has(key)) {
+        continue;
+      }
+      for (const row of toArray(value as any)) {
+        const cells = collectLegacyXmlCells(row, legacyXmlGeometryCellNames);
+        if (cells.length > 0) {
+          rows.push({
+            T: key,
+            IX: String((row as any)?.IX ?? rows.length + 1),
+            Del: (row as any)?.Del,
+            Cell: cells
+          });
+        }
+      }
+    }
+
+    return {
+      N: 'Geometry',
+      IX: String((geom as any)?.IX ?? index),
+      Row: rows
+    };
+  }).filter(section => section.Row.length > 0);
 }
 
 export function createUnsupportedVisioDiagram(sourceName: string, reason: string): VsdxEditorDiagram {
@@ -275,6 +575,9 @@ export async function writeVsdxDiagramToFile(filePath: string, sourceBytes: Buff
 }
 
 export async function writeVsdxDiagram(sourceBytes: Buffer, diagram: VsdxEditorDiagram): Promise<Buffer> {
+  if (diagram.formatSupport === 'legacy-xml') {
+    return writeLegacyXmlDiagram(sourceBytes, diagram);
+  }
   if (diagram.formatSupport !== 'modern-package' || diagram.pages.every(page => page.entry.startsWith('__'))) {
     return Buffer.from(sourceBytes);
   }
@@ -462,17 +765,17 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     : undefined;
   const editable = !readOnlyReason
     && [pinX, pinY, width, height].every(value => value !== undefined)
-    && Math.abs(angle) < 0.0001
     && !hasChildShapes;
   return {
     ...base,
     kind: 'shape',
     editable,
-    reason: editable ? undefined : readOnlyReason ?? 'Shape uses rotation, grouping, or incomplete geometry.',
+    reason: editable ? undefined : readOnlyReason ?? 'Shape uses grouping or incomplete geometry.',
     x: pinX !== undefined && width !== undefined ? pinX - width / 2 : undefined,
     y: pinY !== undefined && height !== undefined ? pinY - height / 2 : undefined,
     width,
     height,
+    angle,
     imageDataUri,
     geometryPath
   };
@@ -494,6 +797,57 @@ function applyShapeUpdates(shapes: any[], updateById: Map<string, VsdxEditorShap
       applyShapeUpdates(childShapes, updateById, id);
     }
   });
+}
+
+function applyLegacyXmlShapeUpdates(shapes: any[], updateById: Map<string, VsdxEditorShape>, parentPath = ''): void {
+  const idCounts = countShapeIds(shapes);
+  const seenIds = new Map<string, number>();
+
+  shapes.forEach((shape, index) => {
+    const id = createModelShapeId(shape, index, parentPath, idCounts, seenIds);
+    const update = id ? updateById.get(id) : undefined;
+    if (update?.editable) {
+      applyLegacyXmlShapeUpdate(shape, update);
+    }
+
+    const childShapes = toArray(shape?.Shapes?.Shape);
+    if (childShapes.length > 0) {
+      applyLegacyXmlShapeUpdates(childShapes, updateById, id);
+    }
+  });
+}
+
+function writeLegacyXmlDiagram(sourceBytes: Buffer, diagram: VsdxEditorDiagram): Buffer {
+  if (diagram.pages.every(page => page.entry.startsWith('__'))) {
+    return Buffer.from(sourceBytes);
+  }
+
+  let parsed: any;
+  try {
+    parsed = xmlParser.parse(sourceBytes.toString('utf8').replace(/^\uFEFF/, ''));
+  } catch {
+    return Buffer.from(sourceBytes);
+  }
+
+  const document = parsed?.VisioDocument ?? parsed?.['VisioDocument'];
+  if (!document) {
+    return Buffer.from(sourceBytes);
+  }
+
+  const pageByEntry = new Map(diagram.pages.map(page => [page.entry, page]));
+  toArray(document?.Pages?.Page).forEach((page, index) => {
+    const entry = legacyXmlPageEntry(page, index);
+    const updatedPage = pageByEntry.get(entry);
+    if (!updatedPage) {
+      return;
+    }
+
+    const updateById = new Map(updatedPage.shapes.map(shape => [shape.id, shape]));
+    applyLegacyXmlShapeUpdates(toArray(page?.Shapes?.Shape), updateById);
+  });
+
+  const body = xmlBuilder.build(parsed);
+  return Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>\n${body}`, 'utf8');
 }
 
 function applyShapeUpdate(shape: any, update: VsdxEditorShape): void {
@@ -525,6 +879,98 @@ function applyShapeUpdate(shape: any, update: VsdxEditorShape): void {
   setCellNumber(cells, 'Width', width);
   setCellNumber(cells, 'Height', height);
   writeShapeText(shape, update.text);
+}
+
+function applyLegacyXmlShapeUpdate(shape: any, update: VsdxEditorShape): void {
+  if (update.kind === 'connector') {
+    const begin = {
+      x: cleanNumber(update.beginX, 0),
+      y: cleanNumber(update.beginY, 0)
+    };
+    const end = {
+      x: cleanNumber(update.endX, 0),
+      y: cleanNumber(update.endY, 0)
+    };
+    setLegacyXmlCellNumber(shape, 'BeginX', begin.x, 'XForm1D');
+    setLegacyXmlCellNumber(shape, 'BeginY', begin.y, 'XForm1D');
+    setLegacyXmlCellNumber(shape, 'EndX', end.x, 'XForm1D');
+    setLegacyXmlCellNumber(shape, 'EndY', end.y, 'XForm1D');
+    rewriteLegacyXmlConnectorGeometry(shape, begin, end);
+    writeShapeText(shape, update.text);
+    return;
+  }
+
+  const width = Math.max(0.05, cleanNumber(update.width, 1));
+  const height = Math.max(0.05, cleanNumber(update.height, 0.6));
+  const pinX = cleanNumber(update.x, 0) + width / 2;
+  const pinY = cleanNumber(update.y, 0) + height / 2;
+  setLegacyXmlCellNumber(shape, 'PinX', pinX, 'XForm');
+  setLegacyXmlCellNumber(shape, 'PinY', pinY, 'XForm');
+  setLegacyXmlCellNumber(shape, 'Width', width, 'XForm');
+  setLegacyXmlCellNumber(shape, 'Height', height, 'XForm');
+  writeShapeText(shape, update.text);
+}
+
+function setLegacyXmlCellNumber(shape: any, name: string, value: number, groupName: string): void {
+  const formatted = formatNumber(value);
+  const cells = toArray(shape?.Cell);
+  const cell = cells.find((candidate: any) => candidate?.N === name);
+  if (cell) {
+    cell.V = formatted;
+    delete cell.F;
+    shape.Cell = cells;
+    return;
+  }
+
+  const group = ensureLegacyXmlObject(shape, groupName);
+  setLegacyXmlScalar(group, name, formatted);
+}
+
+function ensureLegacyXmlObject(target: any, key: string): any {
+  if (!target[key] || typeof target[key] !== 'object' || Array.isArray(target[key])) {
+    target[key] = {};
+  }
+  return target[key];
+}
+
+function setLegacyXmlScalar(target: any, key: string, value: string): void {
+  const previous = target[key];
+  if (previous && typeof previous === 'object' && !Array.isArray(previous)) {
+    previous['#text'] = value;
+    delete previous.F;
+    delete previous.V;
+    return;
+  }
+  target[key] = value;
+}
+
+function rewriteLegacyXmlConnectorGeometry(shape: any, begin: Point, end: Point): void {
+  const minSize = 0.0001;
+  const rawWidth = Math.abs(end.x - begin.x);
+  const rawHeight = Math.abs(end.y - begin.y);
+  const width = Math.max(minSize, rawWidth);
+  const height = Math.max(minSize, rawHeight);
+  const left = rawWidth < minSize ? begin.x - width / 2 : Math.min(begin.x, end.x);
+  const bottom = rawHeight < minSize ? begin.y - height / 2 : Math.min(begin.y, end.y);
+  shape.Geom = {
+    IX: '0',
+    MoveTo: {
+      IX: '1',
+      X: formatNumber(begin.x - left),
+      Y: formatNumber(begin.y - bottom)
+    },
+    LineTo: {
+      IX: '2',
+      X: formatNumber(end.x - left),
+      Y: formatNumber(end.y - bottom)
+    }
+  };
+  setLegacyXmlCellNumber(shape, 'PinX', left + width / 2, 'XForm');
+  setLegacyXmlCellNumber(shape, 'PinY', bottom + height / 2, 'XForm');
+  setLegacyXmlCellNumber(shape, 'Width', width, 'XForm');
+  setLegacyXmlCellNumber(shape, 'Height', height, 'XForm');
+  setLegacyXmlCellNumber(shape, 'LocPinX', width / 2, 'XForm');
+  setLegacyXmlCellNumber(shape, 'LocPinY', height / 2, 'XForm');
 }
 
 function syncConnectorGeometry(shape: any, cells: any[], begin: Point, end: Point): void {

@@ -864,6 +864,11 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       const y = page.height - numberOr(shape.y, 0) - numberOr(shape.height, 0.6);
       const width = numberOr(shape.width, 1);
       const height = numberOr(shape.height, 0.6);
+      const angle = numberOr(shape.angle, 0);
+      if (Math.abs(angle) > 0.0001) {
+        const degrees = -angle * 180 / Math.PI;
+        group.setAttribute('transform', 'rotate(' + degrees + ' ' + (x + width / 2) + ' ' + (y + height / 2) + ')');
+      }
       if (shape.imageDataUri) {
         const image = document.createElementNS(svgNS, 'image');
         image.setAttribute('x', String(x));

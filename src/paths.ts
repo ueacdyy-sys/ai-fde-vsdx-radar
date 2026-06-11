@@ -6,11 +6,18 @@ export {
   allVisioFileGlob,
   allVisioOpenDialogExtensions,
   getVisioFormatSupport,
+  isLegacyBinaryVisioPath,
+  isLegacyOpaqueVisioPath,
+  isLegacyXmlVisioPath,
   isLegacyVisioPath,
   isModernVisioPath,
+  isSemanticVisioPath,
   isVisioPath,
+  legacyXmlVisioFileGlob,
   modernVisioFileGlob,
-  modernVisioOpenDialogExtensions
+  modernVisioOpenDialogExtensions,
+  semanticVisioFileGlob,
+  semanticVisioOpenDialogExtensions
 } from './visioFormats';
 import { isModernVisioPath } from './visioFormats';
 
