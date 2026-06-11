@@ -2,6 +2,18 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.2 - 2026-06-11
+
+### Fixed
+
+- Reduced cold-start overhead by removing eager workspace activation for folders that merely contain `.vsdx` files.
+- Rendered hand-created Visio shapes that inherit geometry and colors from VSDX master shapes.
+- Rendered embedded bitmap image relationships in the interactive editor preview.
+
+### Added
+
+- Editor model fixture coverage for master-inherited shapes and embedded image relationships.
+
 ## 0.1.1 - 2026-06-11
 
 ### Added

@@ -1,4 +1,5 @@
 import * as fs from 'fs/promises';
+import * as path from 'path';
 import JSZip from 'jszip';
 import { XMLBuilder, XMLParser } from 'fast-xml-parser';
 
@@ -51,6 +52,7 @@ export interface VsdxEditorShape {
   beginY?: number;
   endX?: number;
   endY?: number;
+  imageDataUri?: string;
 }
 
 export interface VsdxEditorShapeUpdate {
@@ -66,6 +68,21 @@ interface PageMetadata {
   height?: number;
 }
 
+interface Point {
+  x: number;
+  y: number;
+}
+
+interface PointTransform {
+  toPage(point: Point): Point;
+}
+
+interface EditorShapeContext {
+  modelId: string;
+  masterShapes: Map<string, any>;
+  imageDataUriByRelId: Map<string, string>;
+}
+
 export async function readVsdxDiagramFromFile(filePath: string): Promise<{ bytes: Buffer; diagram: VsdxEditorDiagram }> {
   const bytes = await fs.readFile(filePath);
   return {
@@ -77,6 +94,7 @@ export async function readVsdxDiagramFromFile(filePath: string): Promise<{ bytes
 export async function readVsdxDiagram(bytes: Buffer, sourceName: string): Promise<VsdxEditorDiagram> {
   const zip = await JSZip.loadAsync(bytes);
   const pageMetadata = await readPageMetadata(zip);
+  const masterShapes = await readMasterShapes(zip);
   const pageEntries = Object.keys(zip.files)
     .filter(name => /^visio\/pages\/page\d+\.xml$/i.test(name))
     .sort(sortPageEntries);
@@ -93,9 +111,11 @@ export async function readVsdxDiagram(bytes: Buffer, sourceName: string): Promis
     const xml = await file.async('text');
     const parsed = xmlParser.parse(xml);
     const pageContents = parsed.PageContents ?? parsed['PageContents'];
-    const shapes = toArray(pageContents?.Shapes?.Shape)
-      .map(shape => toEditorShape(shape))
-      .filter(isDefined);
+    const imageDataUriByRelId = await readPageImageDataUris(zip, entry);
+    const shapes = collectEditorShapes(toArray(pageContents?.Shapes?.Shape), {
+      masterShapes,
+      imageDataUriByRelId
+    });
     const unsupportedCount = shapes.filter(shape => !shape.editable).length;
     if (unsupportedCount > 0) {
       unsupportedNotes.push(`${meta?.name ?? entry}: ${unsupportedCount} shape(s) are shown as read-only because they use grouping, rotation, or incomplete geometry.`);
@@ -191,23 +211,62 @@ function normalizeShapeUpdate(previous: VsdxEditorShape, next: VsdxEditorShape):
   };
 }
 
-function toEditorShape(shape: any): VsdxEditorShape | undefined {
-  const id = normalizedId(shape?.ID);
+function collectEditorShapes(
+  shapes: any[],
+  context: Omit<EditorShapeContext, 'modelId'>,
+  parentPath = '',
+  parentTransform?: PointTransform
+): VsdxEditorShape[] {
+  const collected: VsdxEditorShape[] = [];
+  const idCounts = countShapeIds(shapes);
+  const seenIds = new Map<string, number>();
+
+  shapes.forEach((shape, index) => {
+    const modelId = createModelShapeId(shape, index, parentPath, idCounts, seenIds);
+    if (!modelId) {
+      return;
+    }
+
+    const pageShape = parentTransform ? transformShapeCoordinates(shape, parentTransform) : shape;
+    const editorShape = toEditorShape(pageShape, {
+      ...context,
+      modelId
+    });
+    if (editorShape) {
+      collected.push(editorShape);
+    }
+
+    const childShapes = toArray(shape?.Shapes?.Shape);
+    if (childShapes.length > 0) {
+      const childTransform = createLocalToPageTransform(shape, parentTransform);
+      collected.push(...collectEditorShapes(childShapes, context, modelId, childTransform));
+    }
+  });
+
+  return collected;
+}
+
+function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape | undefined {
+  const id = context.modelId;
   if (!id) {
     return undefined;
   }
 
   const cells = toArray(shape?.Cell);
-  const lineWeight = readCellNumber(cells, 'LineWeight');
-  const angle = readCellNumber(cells, 'Angle') ?? 0;
+  const masterShape = readMasterShapeFor(shape, context.masterShapes);
+  const masterCells = toArray(masterShape?.Cell);
+  const lineWeight = readCellNumber(cells, 'LineWeight') ?? readCellNumber(masterCells, 'LineWeight');
+  const angle = readCellNumber(cells, 'Angle') ?? readCellNumber(masterCells, 'Angle') ?? 0;
   const hasChildShapes = toArray(shape?.Shapes?.Shape).length > 0;
   const isConnector = isConnectorShape(shape);
+  const text = readShapeText(shape) || readShapeText(masterShape);
+  const imageDataUri = readShapeImageDataUri(shape, context.imageDataUriByRelId);
   const base = {
     id,
-    name: String(shape?.Name ?? shape?.NameU ?? id),
-    text: readShapeText(shape),
-    fill: readCellString(cells, 'FillForegnd') ?? '#ffffff',
-    line: readCellString(cells, 'LineColor') ?? '#586069',
+    name: String(shape?.Name ?? shape?.NameU ?? masterShape?.Name ?? masterShape?.NameU ?? id),
+    text,
+    fill: readCellString(cells, 'FillForegnd') ?? readCellString(masterCells, 'FillForegnd') ?? '#ffffff',
+    line: readCellString(cells, 'LineColor') ?? readCellString(masterCells, 'LineColor') ?? '#586069',
     strokeWidth: Math.max(0.015, lineWeight ?? 0.02)
   };
 
@@ -231,8 +290,8 @@ function toEditorShape(shape: any): VsdxEditorShape | undefined {
 
   const pinX = readCellNumber(cells, 'PinX');
   const pinY = readCellNumber(cells, 'PinY');
-  const width = readCellNumber(cells, 'Width');
-  const height = readCellNumber(cells, 'Height');
+  const width = readCellNumber(cells, 'Width') ?? readCellNumber(masterCells, 'Width');
+  const height = readCellNumber(cells, 'Height') ?? readCellNumber(masterCells, 'Height');
   const editable = [pinX, pinY, width, height].every(value => value !== undefined)
     && Math.abs(angle) < 0.0001
     && !hasChildShapes;
@@ -244,13 +303,17 @@ function toEditorShape(shape: any): VsdxEditorShape | undefined {
     x: pinX !== undefined && width !== undefined ? pinX - width / 2 : undefined,
     y: pinY !== undefined && height !== undefined ? pinY - height / 2 : undefined,
     width,
-    height
+    height,
+    imageDataUri
   };
 }
 
-function applyShapeUpdates(shapes: any[], updateById: Map<string, VsdxEditorShape>): void {
-  for (const shape of shapes) {
-    const id = normalizedId(shape?.ID);
+function applyShapeUpdates(shapes: any[], updateById: Map<string, VsdxEditorShape>, parentPath = ''): void {
+  const idCounts = countShapeIds(shapes);
+  const seenIds = new Map<string, number>();
+
+  shapes.forEach((shape, index) => {
+    const id = createModelShapeId(shape, index, parentPath, idCounts, seenIds);
     const update = id ? updateById.get(id) : undefined;
     if (update?.editable) {
       applyShapeUpdate(shape, update);
@@ -258,9 +321,9 @@ function applyShapeUpdates(shapes: any[], updateById: Map<string, VsdxEditorShap
 
     const childShapes = toArray(shape?.Shapes?.Shape);
     if (childShapes.length > 0) {
-      applyShapeUpdates(childShapes, updateById);
+      applyShapeUpdates(childShapes, updateById, id);
     }
-  }
+  });
 }
 
 function applyShapeUpdate(shape: any, update: VsdxEditorShape): void {
@@ -326,9 +389,118 @@ async function readPageMetadata(zip: JSZip): Promise<Map<string, PageMetadata>> 
   return metadata;
 }
 
+async function readMasterShapes(zip: JSZip): Promise<Map<string, any>> {
+  const masterShapes = new Map<string, any>();
+  const mastersFile = zip.file('visio/masters/masters.xml');
+  const relsFile = zip.file('visio/masters/_rels/masters.xml.rels');
+  if (!mastersFile || !relsFile) {
+    return masterShapes;
+  }
+
+  const [mastersXml, relsXml] = await Promise.all([
+    mastersFile.async('text'),
+    relsFile.async('text')
+  ]);
+  const mastersParsed = xmlParser.parse(mastersXml);
+  const relsParsed = xmlParser.parse(relsXml);
+  const targetById = new Map<string, string>();
+  for (const rel of toArray(relsParsed.Relationships?.Relationship)) {
+    if (typeof rel?.Id === 'string' && typeof rel?.Target === 'string') {
+      targetById.set(rel.Id, normalizePackageTarget('visio/masters/masters.xml', rel.Target));
+    }
+  }
+
+  for (const master of toArray(mastersParsed.Masters?.Master)) {
+    const id = normalizedId(master?.ID);
+    const relId = master?.Rel?.['r:id'] ?? master?.Rel?.id;
+    const entry = typeof relId === 'string' ? targetById.get(relId) : undefined;
+    const masterFile = entry ? zip.file(entry) : undefined;
+    if (!id || !masterFile) {
+      continue;
+    }
+
+    const parsed = xmlParser.parse(await masterFile.async('text'));
+    const contents = parsed.MasterContents ?? parsed['MasterContents'];
+    const shape = toArray(contents?.Shapes?.Shape)[0];
+    if (shape) {
+      masterShapes.set(id, {
+        ...shape,
+        Name: master?.Name ?? shape?.Name,
+        NameU: master?.NameU ?? shape?.NameU
+      });
+    }
+  }
+
+  return masterShapes;
+}
+
+async function readPageImageDataUris(zip: JSZip, pageEntry: string): Promise<Map<string, string>> {
+  const images = new Map<string, string>();
+  const relsFile = zip.file(pageRelationshipEntry(pageEntry));
+  if (!relsFile) {
+    return images;
+  }
+
+  const parsed = xmlParser.parse(await relsFile.async('text'));
+  for (const rel of toArray(parsed.Relationships?.Relationship)) {
+    if (typeof rel?.Id !== 'string' || typeof rel?.Target !== 'string') {
+      continue;
+    }
+
+    const target = normalizePackageTarget(pageEntry, rel.Target);
+    const mimeType = mimeTypeForImageTarget(target);
+    const isImageRel = String(rel?.Type ?? '').toLowerCase().includes('/image');
+    if (!mimeType || !isImageRel) {
+      continue;
+    }
+
+    const mediaFile = zip.file(target);
+    if (!mediaFile) {
+      continue;
+    }
+
+    images.set(rel.Id, `data:${mimeType};base64,${await mediaFile.async('base64')}`);
+  }
+
+  return images;
+}
+
 function normalizePageEntry(target: string): string {
   const normalized = target.replace(/\\/g, '/').replace(/^\.\//, '');
   return normalized.startsWith('visio/pages/') ? normalized : `visio/pages/${normalized}`;
+}
+
+function normalizePackageTarget(sourceEntry: string, target: string): string {
+  const normalizedTarget = target.replace(/\\/g, '/');
+  if (normalizedTarget.startsWith('/')) {
+    return path.posix.normalize(normalizedTarget.slice(1));
+  }
+  return path.posix.normalize(path.posix.join(path.posix.dirname(sourceEntry), normalizedTarget)).replace(/^\.\//, '');
+}
+
+function pageRelationshipEntry(pageEntry: string): string {
+  return `${path.posix.dirname(pageEntry)}/_rels/${path.posix.basename(pageEntry)}.rels`;
+}
+
+function mimeTypeForImageTarget(target: string): string | undefined {
+  const extension = path.posix.extname(target).toLowerCase();
+  switch (extension) {
+    case '.png':
+      return 'image/png';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.gif':
+      return 'image/gif';
+    case '.bmp':
+      return 'image/bmp';
+    case '.webp':
+      return 'image/webp';
+    case '.svg':
+      return 'image/svg+xml';
+    default:
+      return undefined;
+  }
 }
 
 function readCellNumber(cells: unknown[], name: string): number | undefined {
@@ -342,6 +514,25 @@ function readCellString(cells: unknown[], name: string): string | undefined {
   return typeof cell?.V === 'string' && cell.V.trim().length > 0 ? cell.V : undefined;
 }
 
+function readMasterShapeFor(shape: any, masterShapes: Map<string, any>): any | undefined {
+  const masterId = normalizedId(shape?.Master);
+  return masterId ? masterShapes.get(masterId) : undefined;
+}
+
+function readShapeImageDataUri(shape: any, imageDataUriByRelId: Map<string, string>): string | undefined {
+  for (const foreignData of toArray(shape?.ForeignData)) {
+    const rel = foreignData?.Rel;
+    const relId = rel?.['r:id'] ?? rel?.id ?? rel?.Id;
+    if (typeof relId === 'string') {
+      const image = imageDataUriByRelId.get(relId);
+      if (image) {
+        return image;
+      }
+    }
+  }
+  return undefined;
+}
+
 function setCellNumber(cells: any[], name: string, value: number): void {
   const cell = cells.find((candidate: any) => candidate?.N === name);
   const formatted = formatNumber(value);
@@ -353,16 +544,10 @@ function setCellNumber(cells: any[], name: string, value: number): void {
 }
 
 function readShapeText(shape: any): string {
-  if (shape?.Text === undefined || shape.Text === null) {
+  if (!shape || shape.Text === undefined || shape.Text === null) {
     return '';
   }
-  if (typeof shape.Text === 'string') {
-    return shape.Text;
-  }
-  if (typeof shape.Text?.['#text'] === 'string') {
-    return shape.Text['#text'];
-  }
-  return String(shape.Text);
+  return extractText(shape.Text);
 }
 
 function writeShapeText(shape: any, text: string): void {
@@ -374,6 +559,165 @@ function writeShapeText(shape: any, text: string): void {
     return;
   }
   shape.Text = text;
+}
+
+function extractText(value: unknown): string {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(extractText).join('');
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const direct = record['#text'];
+    if (typeof direct === 'string') {
+      return direct;
+    }
+    return Object.entries(record)
+      .filter(([key]) => !key.startsWith('?') && !['cp', 'pp', 'tp'].includes(key))
+      .map(([, nested]) => extractText(nested))
+      .join('');
+  }
+  return '';
+}
+
+function countShapeIds(shapes: any[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  shapes.forEach((shape, index) => {
+    const id = normalizedId(shape?.ID) ?? `shape-${index + 1}`;
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  });
+  return counts;
+}
+
+function createModelShapeId(
+  shape: any,
+  index: number,
+  parentPath: string | undefined,
+  idCounts: Map<string, number>,
+  seenIds: Map<string, number>
+): string | undefined {
+  const rawId = normalizedId(shape?.ID) ?? `shape-${index + 1}`;
+  const nextSeen = (seenIds.get(rawId) ?? 0) + 1;
+  seenIds.set(rawId, nextSeen);
+  const localId = (idCounts.get(rawId) ?? 0) > 1 ? `${rawId}[${nextSeen}]` : rawId;
+  return parentPath ? `${parentPath}/${localId}` : localId;
+}
+
+function transformShapeCoordinates(shape: any, parentTransform: PointTransform): any {
+  const cells = toArray(shape?.Cell);
+  const transformedCells = cells.map((cell: any) => ({ ...cell }));
+  const localToPageTransform = createLocalToPageTransform(shape, parentTransform);
+  transformCellPointPair(transformedCells, parentTransform, 'PinX', 'PinY');
+  transformCellPointPair(transformedCells, parentTransform, 'BeginX', 'BeginY');
+  transformCellPointPair(transformedCells, parentTransform, 'EndX', 'EndY');
+
+  const pageShape = {
+    ...shape,
+    Cell: transformedCells
+  };
+
+  if (!isConnectorShape(pageShape)) {
+    normalizeShapeBounds(cells, transformedCells, localToPageTransform);
+  }
+
+  return pageShape;
+}
+
+function transformCellPointPair(cells: any[], transform: PointTransform, xName: string, yName: string): void {
+  const x = readCellNumber(cells, xName);
+  const y = readCellNumber(cells, yName);
+  if (x === undefined || y === undefined) {
+    return;
+  }
+
+  const point = transform.toPage({ x, y });
+  setCellNumber(cells, xName, point.x);
+  setCellNumber(cells, yName, point.y);
+}
+
+function createLocalToPageTransform(shape: any, parentTransform?: PointTransform): PointTransform | undefined {
+  const cells = toArray(shape?.Cell);
+  const pinX = readCellNumber(cells, 'PinX');
+  const pinY = readCellNumber(cells, 'PinY');
+  const locPinX = readLocPin(cells, 'LocPinX', 'Width');
+  const locPinY = readLocPin(cells, 'LocPinY', 'Height');
+  if ([pinX, pinY, locPinX, locPinY].some(value => value === undefined)) {
+    return parentTransform;
+  }
+
+  const angle = readCellNumber(cells, 'Angle') ?? 0;
+  const flipX = readCellNumber(cells, 'FlipX') === 1;
+  const flipY = readCellNumber(cells, 'FlipY') === 1;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+
+  return {
+    toPage(point: Point): Point {
+      const localX = (flipX ? -1 : 1) * (point.x - locPinX!);
+      const localY = (flipY ? -1 : 1) * (point.y - locPinY!);
+      const parentPoint = {
+        x: pinX! + localX * cos - localY * sin,
+        y: pinY! + localX * sin + localY * cos
+      };
+      return parentTransform ? parentTransform.toPage(parentPoint) : parentPoint;
+    }
+  };
+}
+
+function normalizeShapeBounds(
+  originalCells: any[],
+  transformedCells: any[],
+  localToPageTransform: PointTransform | undefined
+): void {
+  if (!localToPageTransform) {
+    return;
+  }
+
+  const width = readCellNumber(originalCells, 'Width');
+  const height = readCellNumber(originalCells, 'Height');
+  if (width === undefined || height === undefined) {
+    return;
+  }
+
+  const points = [
+    localToPageTransform.toPage({ x: 0, y: 0 }),
+    localToPageTransform.toPage({ x: width, y: 0 }),
+    localToPageTransform.toPage({ x: width, y: height }),
+    localToPageTransform.toPage({ x: 0, y: height })
+  ];
+  const xs = points.map(point => point.x);
+  const ys = points.map(point => point.y);
+  const left = Math.min(...xs);
+  const right = Math.max(...xs);
+  const bottom = Math.min(...ys);
+  const top = Math.max(...ys);
+  const normalizedWidth = right - left;
+  const normalizedHeight = top - bottom;
+  setCellNumber(transformedCells, 'PinX', (left + right) / 2);
+  setCellNumber(transformedCells, 'PinY', (bottom + top) / 2);
+  setCellNumber(transformedCells, 'Width', normalizedWidth);
+  setCellNumber(transformedCells, 'Height', normalizedHeight);
+  setCellNumber(transformedCells, 'LocPinX', normalizedWidth / 2);
+  setCellNumber(transformedCells, 'LocPinY', normalizedHeight / 2);
+  setCellNumber(transformedCells, 'Angle', 0);
+}
+
+function readLocPin(cells: unknown[], locPinName: string, sizeName: string): number | undefined {
+  const locPin = readCellNumber(cells, locPinName);
+  if (locPin !== undefined) {
+    return locPin;
+  }
+
+  const size = readCellNumber(cells, sizeName);
+  return size !== undefined ? size / 2 : undefined;
 }
 
 function isConnectorShape(shape: any): boolean {

@@ -2,7 +2,7 @@
   "name": "ai-fde-vsdx-radar",
   "displayName": "Visio VSDX Preview & QA Linter",
   "description": "在 VS Code 中预览、轻量编辑和 QA Microsoft Visio VSDX 文件。",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "ai-fde-lab",
   "license": "SEE LICENSE IN LICENSE.txt",
   "author": {
@@ -85,8 +85,7 @@
     "onCommand:aiFdeVsdxRadar.openWorkspaceRiskDashboard",
     "onCommand:aiFdeVsdxRadar.openHighestPriorityRisk",
     "onCommand:aiFdeVsdxRadar.openNextDueRisk",
-    "onCommand:aiFdeVsdxRadar.openAllRiskReports",
-    "workspaceContains:**/*.vsdx"
+    "onCommand:aiFdeVsdxRadar.openAllRiskReports"
   ],
   "main": "./dist-bundle/extension.js",
   "scripts": {
@@ -103,6 +102,7 @@
     "smoke:visio": "pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -STA -File ./scripts/smoke-visio-export.ps1",
     "smoke:visio:multipage": "pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -STA -File ./scripts/smoke-visio-multipage-export.ps1",
     "test:qa": "npm run compile && node ./dist/test/runQaFixture.js",
+    "test:editor": "npm run compile && node ./dist/test/runEditorModelFixture.js",
     "test:qa:visio": "npm run compile && node ./dist/test/runVisioQaSmoke.js",
     "verify": "npm run test:qa && npm run smoke:visio && npm run smoke:visio:multipage && npm run test:qa:visio",
     "watch": "tsc -watch -p ./",

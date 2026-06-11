@@ -160,7 +160,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
   <title>${title}</title>
   <style>
     :root {
@@ -861,6 +861,16 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       const y = page.height - numberOr(shape.y, 0) - numberOr(shape.height, 0.6);
       const width = numberOr(shape.width, 1);
       const height = numberOr(shape.height, 0.6);
+      if (shape.imageDataUri) {
+        const image = document.createElementNS(svgNS, 'image');
+        image.setAttribute('x', String(x));
+        image.setAttribute('y', String(y));
+        image.setAttribute('width', String(width));
+        image.setAttribute('height', String(height));
+        image.setAttribute('href', shape.imageDataUri);
+        image.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        group.append(image);
+      }
       const rect = document.createElementNS(svgNS, 'rect');
       rect.classList.add('shape-outline');
       rect.setAttribute('x', String(x));
@@ -868,7 +878,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       rect.setAttribute('width', String(width));
       rect.setAttribute('height', String(height));
       rect.setAttribute('rx', String(Math.min(0.08, height / 6)));
-      rect.setAttribute('fill', safeColor(shape.fill, '#ffffff'));
+      rect.setAttribute('fill', shape.imageDataUri ? 'none' : safeColor(shape.fill, '#ffffff'));
       rect.setAttribute('stroke', safeColor(shape.line, '#586069'));
       rect.setAttribute('stroke-width', String(Math.max(0.012, numberOr(shape.strokeWidth, 0.02))));
       group.append(rect);
