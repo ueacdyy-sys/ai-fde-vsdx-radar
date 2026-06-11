@@ -761,12 +761,15 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         shape.beginY = round4(drag.original.beginY + dy);
         shape.endX = round4(drag.original.endX + dx);
         shape.endY = round4(drag.original.endY + dy);
+        invalidateConnectorGeometry(shape);
       } else if (drag.mode === 'begin') {
         shape.beginX = clamp(point.x, 0, page.width);
         shape.beginY = clamp(point.y, 0, page.height);
+        invalidateConnectorGeometry(shape);
       } else if (drag.mode === 'end') {
         shape.endX = clamp(point.x, 0, page.width);
         shape.endY = clamp(point.y, 0, page.height);
+        invalidateConnectorGeometry(shape);
       }
       dirty = true;
       renderCanvas();
@@ -937,23 +940,41 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       const y1 = page.height - numberOr(shape.beginY, 0);
       const x2 = numberOr(shape.endX, 0);
       const y2 = page.height - numberOr(shape.endY, 0);
-      const line = document.createElementNS(svgNS, 'line');
-      line.setAttribute('x1', String(x1));
-      line.setAttribute('y1', String(y1));
-      line.setAttribute('x2', String(x2));
-      line.setAttribute('y2', String(y2));
-      line.setAttribute('stroke', safeColor(shape.line, '#3b82f6'));
-      line.setAttribute('stroke-width', String(Math.max(0.018, numberOr(shape.strokeWidth, 0.025))));
-      line.setAttribute('stroke-linecap', 'round');
-      line.setAttribute('vector-effect', 'non-scaling-stroke');
-      group.append(line);
+      let connectorBody = null;
+      if (shape.geometryPath && shape.x !== undefined && shape.y !== undefined && shape.width !== undefined && shape.height !== undefined) {
+        const x = numberOr(shape.x, 0);
+        const y = page.height - numberOr(shape.y, 0) - numberOr(shape.height, 0.6);
+        const path = document.createElementNS(svgNS, 'path');
+        path.setAttribute('d', shape.geometryPath);
+        path.setAttribute('transform', 'translate(' + x + ' ' + y + ')');
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', safeColor(shape.line, '#3b82f6'));
+        path.setAttribute('stroke-width', String(Math.max(0.018, numberOr(shape.strokeWidth, 0.025))));
+        path.setAttribute('stroke-linecap', 'round');
+        path.setAttribute('stroke-linejoin', 'round');
+        path.setAttribute('vector-effect', 'non-scaling-stroke');
+        group.append(path);
+        connectorBody = path;
+      } else {
+        const line = document.createElementNS(svgNS, 'line');
+        line.setAttribute('x1', String(x1));
+        line.setAttribute('y1', String(y1));
+        line.setAttribute('x2', String(x2));
+        line.setAttribute('y2', String(y2));
+        line.setAttribute('stroke', safeColor(shape.line, '#3b82f6'));
+        line.setAttribute('stroke-width', String(Math.max(0.018, numberOr(shape.strokeWidth, 0.025))));
+        line.setAttribute('stroke-linecap', 'round');
+        line.setAttribute('vector-effect', 'non-scaling-stroke');
+        group.append(line);
+        connectorBody = line;
+      }
       if (shape.editable) {
         group.append(connectorHandle(page, shape, 'begin', x1, y1));
         group.append(connectorHandle(page, shape, 'end', x2, y2));
       }
       group.addEventListener('pointerdown', event => {
         selectShape(shape.id);
-        if (shape.editable && event.target === line) {
+        if (shape.editable && event.target === connectorBody) {
           startDrag(event, shape, 'connector');
         }
       });
@@ -1197,6 +1218,12 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
           shape
         }
       });
+    }
+
+    function invalidateConnectorGeometry(shape) {
+      if (shape.kind === 'connector') {
+        shape.geometryPath = '';
+      }
     }
 
     function selectShape(id) {

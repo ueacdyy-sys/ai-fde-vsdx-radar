@@ -2,6 +2,19 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.4 - 2026-06-11
+
+### Added
+
+- Expanded semantic VSDX geometry rendering for common ShapeSheet rows, including `ArcTo`, `EllipticalArcTo`, `PolylineTo`, `NURBSTo`, `Ellipse`, `InfiniteLine`, `SplineStart`, `SplineKnot`, and relative `Rel*` rows.
+- Rendered connector geometry paths when available, while preserving endpoint dragging and straight-line fallback after connector edits.
+- Added editor model regression fixtures for advanced geometry rows, connector geometry, and master fallback when page geometry is incomplete.
+
+### Changed
+
+- Parsed VSDX pages and master files in parallel to keep editor opening on the lightweight XML path instead of waiting for Visio COM/PNG export.
+- Fell back from incomplete page-level geometry to master geometry instead of showing an empty shape.
+
 ## 0.1.3 - 2026-06-11
 
 ### Added

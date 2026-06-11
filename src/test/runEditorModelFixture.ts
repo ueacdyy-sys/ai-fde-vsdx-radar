@@ -5,6 +5,10 @@ import { readVsdxDiagram } from '../editor/vsdxModel';
 
 async function main(): Promise<void> {
   await verifiesMasterShapeGeometry();
+  await verifiesCurvedGeometryRows();
+  await verifiesAdvancedGeometryRows();
+  await verifiesConnectorGeometryRows();
+  await verifiesMasterFallbackWhenPageGeometryIsIncomplete();
   await verifiesEmbeddedImageRelationship();
   console.log('Editor model fixture checks passed.');
 }
@@ -59,6 +63,157 @@ async function verifiesMasterShapeGeometry(): Promise<void> {
   assert.ok(Math.abs((shape.height ?? 0) - 0.4921259842) < 0.00001, 'expected height inherited from master');
   assert.strictEqual(shape.fill, '#ffff80');
   assert.ok(shape.geometryPath?.startsWith('M 0 0.4921'), 'expected geometry path inherited from master');
+}
+
+async function verifiesCurvedGeometryRows(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/masters/masters.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<Masters xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <Master ID="2" NameU="Curved"><Rel r:id="rId1"/></Master>
+</Masters>`);
+  zip.file('visio/masters/_rels/masters.xml.rels', `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.microsoft.com/visio/2010/relationships/master" Target="master1.xml"/>
+</Relationships>`);
+  zip.file('visio/masters/master1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<MasterContents>
+  <Shapes>
+    <Shape ID="5">
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Section N="Geometry">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+        <Row T="ArcTo" IX="2"><Cell N="X" V="1"/><Cell N="Y" V="1"/><Cell N="A" V="0.25"/></Row>
+        <Row T="EllipticalArcTo" IX="3"><Cell N="X" V="2"/><Cell N="Y" V="0"/><Cell N="A" V="1.5"/><Cell N="B" V="1"/></Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</MasterContents>`);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Curved" Master="2">
+      <Cell N="PinX" V="4"/>
+      <Cell N="PinY" V="4"/>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'curved-fixture.vsdx');
+  const geometryPath = diagram.pages[0]?.shapes[0]?.geometryPath ?? '';
+  assert.ok(geometryPath.includes(' Q '), 'expected curved geometry rows to compile to SVG quadratic curves');
+}
+
+async function verifiesAdvancedGeometryRows(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Advanced">
+      <Cell N="PinX" V="4"/>
+      <Cell N="PinY" V="4"/>
+      <Cell N="Width" V="4"/>
+      <Cell N="Height" V="2"/>
+      <Section N="Geometry" IX="0">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+        <Row T="RelLineTo" IX="2"><Cell N="X" V="0.25"/><Cell N="Y" V="0.5"/></Row>
+        <Row T="RelQuadBezTo" IX="3"><Cell N="X" V="0.5"/><Cell N="Y" V="0.5"/><Cell N="A" V="0.35"/><Cell N="B" V="0.75"/></Row>
+        <Row T="RelCubBezTo" IX="4"><Cell N="X" V="0.75"/><Cell N="Y" V="0.25"/><Cell N="A" V="0.55"/><Cell N="B" V="0.75"/><Cell N="C" V="0.65"/><Cell N="D" V="0.25"/></Row>
+        <Row T="PolylineTo" IX="5"><Cell N="X" V="4"/><Cell N="Y" V="0"/><Cell N="A" F="POLYLINE(3.5,0.5,4,0)"/></Row>
+      </Section>
+      <Section N="Geometry" IX="1">
+        <Row T="Ellipse" IX="1"><Cell N="X" V="2"/><Cell N="Y" V="1"/><Cell N="A" V="3"/><Cell N="B" V="1"/><Cell N="C" V="2"/><Cell N="D" V="1.5"/></Row>
+      </Section>
+      <Section N="Geometry" IX="2">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="1"/></Row>
+        <Row T="NURBSTo" IX="2"><Cell N="X" V="4"/><Cell N="Y" V="1"/><Cell N="E" F="NURBS(1,1,2,1,3,1)"/></Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'advanced-geometry-fixture.vsdx');
+  const geometryPath = diagram.pages[0]?.shapes[0]?.geometryPath ?? '';
+  assert.ok(geometryPath.includes(' Q '), 'expected relative quadratic geometry to compile');
+  assert.ok(geometryPath.includes(' C '), 'expected relative cubic geometry to compile');
+  assert.ok(geometryPath.includes(' A '), 'expected ellipse geometry to compile to SVG arcs');
+  assert.ok(geometryPath.includes('L 3.5 1.5'), 'expected polyline formula vertices to be rendered');
+}
+
+async function verifiesMasterFallbackWhenPageGeometryIsIncomplete(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/masters/masters.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<Masters xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <Master ID="2" NameU="Fallback"><Rel r:id="rId1"/></Master>
+</Masters>`);
+  zip.file('visio/masters/_rels/masters.xml.rels', `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.microsoft.com/visio/2010/relationships/master" Target="master1.xml"/>
+</Relationships>`);
+  zip.file('visio/masters/master1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<MasterContents>
+  <Shapes>
+    <Shape ID="5">
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Section N="Geometry" IX="0">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" V="2"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="3"><Cell N="X" V="2"/><Cell N="Y" V="1"/></Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</MasterContents>`);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Fallback" Master="2">
+      <Cell N="PinX" V="4"/>
+      <Cell N="PinY" V="4"/>
+      <Section N="Geometry" IX="0">
+        <Row T="MoveTo" IX="1" Del="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'fallback-fixture.vsdx');
+  const geometryPath = diagram.pages[0]?.shapes[0]?.geometryPath ?? '';
+  assert.ok(geometryPath.startsWith('M 0 1 L 2 1 L 2 0'), 'expected incomplete page geometry to fall back to master geometry');
+}
+
+async function verifiesConnectorGeometryRows(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Dynamic connector">
+      <Cell N="PinX" V="2"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="1"/>
+      <Cell N="Height" V="2"/>
+      <Cell N="BeginX" V="2"/>
+      <Cell N="BeginY" V="1"/>
+      <Cell N="EndX" V="2"/>
+      <Cell N="EndY" V="3"/>
+      <Section N="Geometry" IX="0">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0.5"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" V="0.5"/><Cell N="Y" V="2"/></Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'connector-geometry-fixture.vsdx');
+  const connector = diagram.pages[0]?.shapes[0];
+  assert.ok(connector, 'expected connector to be parsed');
+  assert.strictEqual(connector.kind, 'connector');
+  assert.strictEqual(connector.editable, true);
+  assert.strictEqual(connector.geometryPath, 'M 0.5 2 L 0.5 0');
 }
 
 async function verifiesEmbeddedImageRelationship(): Promise<void> {

@@ -74,6 +74,19 @@ interface Point {
   y: number;
 }
 
+interface GeometrySource {
+  cells: any[];
+  sections: any[];
+}
+
+interface GeometryContext {
+  targetWidth: number;
+  targetHeight: number;
+  scaleX: number;
+  scaleY: number;
+  scaleAverage: number;
+}
+
 interface PointTransform {
   toPage(point: Point): Point;
 }
@@ -99,13 +112,10 @@ export async function readVsdxDiagram(bytes: Buffer, sourceName: string): Promis
   const pageEntries = Object.keys(zip.files)
     .filter(name => /^visio\/pages\/page\d+\.xml$/i.test(name))
     .sort(sortPageEntries);
-  const pages: VsdxEditorPage[] = [];
-  const unsupportedNotes: string[] = [];
-
-  for (const entry of pageEntries) {
+  const pageResults = await Promise.all(pageEntries.map(async entry => {
     const file = zip.file(entry);
     if (!file) {
-      continue;
+      return undefined;
     }
 
     const meta = pageMetadata.get(entry);
@@ -118,24 +128,24 @@ export async function readVsdxDiagram(bytes: Buffer, sourceName: string): Promis
       imageDataUriByRelId
     });
     const unsupportedCount = shapes.filter(shape => !shape.editable).length;
-    if (unsupportedCount > 0) {
-      unsupportedNotes.push(`${meta?.name ?? entry}: ${unsupportedCount} shape(s) are shown as read-only because they use grouping, rotation, or incomplete geometry.`);
-    }
-
-    pages.push({
+    const page = {
       id: meta?.id ?? entry,
       entry,
       name: meta?.name ?? entry.match(/page(\d+)\.xml$/i)?.[1] ?? entry,
       width: validPageSize(meta?.width, 8),
       height: validPageSize(meta?.height, 6),
       shapes
-    });
-  }
+    };
+    const unsupportedNote = unsupportedCount > 0
+      ? `${page.name}: ${unsupportedCount} shape(s) are shown as read-only because they use grouping, rotation, or incomplete geometry.`
+      : undefined;
+    return { page, unsupportedNote };
+  }));
 
   return {
     sourceName,
-    pages,
-    unsupportedNotes
+    pages: pageResults.map(result => result?.page).filter(isDefined),
+    unsupportedNotes: pageResults.map(result => result?.unsupportedNote).filter(isDefined)
   };
 }
 
@@ -276,6 +286,13 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     const beginY = readCellNumber(cells, 'BeginY');
     const endX = readCellNumber(cells, 'EndX');
     const endY = readCellNumber(cells, 'EndY');
+    const pinX = readCellNumber(cells, 'PinX');
+    const pinY = readCellNumber(cells, 'PinY');
+    const width = readCellNumber(cells, 'Width') ?? readCellNumber(masterCells, 'Width');
+    const height = readCellNumber(cells, 'Height') ?? readCellNumber(masterCells, 'Height');
+    const geometryPath = width !== undefined && height !== undefined
+      ? compileGeometryPath(shape, masterShape, width, height)
+      : undefined;
     const editable = [beginX, beginY, endX, endY].every(value => value !== undefined) && !hasChildShapes;
     return {
       ...base,
@@ -285,7 +302,12 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
       beginX,
       beginY,
       endX,
-      endY
+      endY,
+      x: pinX !== undefined && width !== undefined ? pinX - width / 2 : undefined,
+      y: pinY !== undefined && height !== undefined ? pinY - height / 2 : undefined,
+      width,
+      height,
+      geometryPath
     };
   }
 
@@ -415,24 +437,33 @@ async function readMasterShapes(zip: JSZip): Promise<Map<string, any>> {
     }
   }
 
-  for (const master of toArray(mastersParsed.Masters?.Master)) {
+  const masterEntries = await Promise.all(toArray(mastersParsed.Masters?.Master).map(async master => {
     const id = normalizedId(master?.ID);
     const relId = master?.Rel?.['r:id'] ?? master?.Rel?.id;
     const entry = typeof relId === 'string' ? targetById.get(relId) : undefined;
     const masterFile = entry ? zip.file(entry) : undefined;
     if (!id || !masterFile) {
-      continue;
+      return undefined;
     }
 
     const parsed = xmlParser.parse(await masterFile.async('text'));
     const contents = parsed.MasterContents ?? parsed['MasterContents'];
     const shape = toArray(contents?.Shapes?.Shape)[0];
-    if (shape) {
-      masterShapes.set(id, {
+    return shape
+      ? {
+        id,
+        shape: {
         ...shape,
         Name: master?.Name ?? shape?.Name,
         NameU: master?.NameU ?? shape?.NameU
-      });
+        }
+      }
+      : undefined;
+  }));
+
+  for (const entry of masterEntries) {
+    if (entry) {
+      masterShapes.set(entry.id, entry.shape);
     }
   }
 
@@ -519,6 +550,11 @@ function readCellString(cells: unknown[], name: string): string | undefined {
   return typeof cell?.V === 'string' && cell.V.trim().length > 0 ? cell.V : undefined;
 }
 
+function readCellFormula(cells: unknown[], name: string): string | undefined {
+  const cell = cells.find((candidate: any) => candidate?.N === name) as any;
+  return typeof cell?.F === 'string' && cell.F.trim().length > 0 ? cell.F : undefined;
+}
+
 function readMasterShapeFor(shape: any, masterShapes: Map<string, any>): any | undefined {
   const masterId = normalizedId(shape?.Master);
   return masterId ? masterShapes.get(masterId) : undefined;
@@ -539,67 +575,333 @@ function readShapeImageDataUri(shape: any, imageDataUriByRelId: Map<string, stri
 }
 
 function compileGeometryPath(shape: any, masterShape: any, targetWidth: number, targetHeight: number): string | undefined {
-  const source = hasGeometrySection(shape) ? shape : hasGeometrySection(masterShape) ? masterShape : undefined;
-  if (!source) {
-    return undefined;
+  const candidates = [
+    ...geometrySourcesFor(shape),
+    ...geometrySourcesFor(masterShape)
+  ];
+
+  for (const source of candidates) {
+    const pathData = compileGeometrySource(source, targetWidth, targetHeight);
+    if (pathData) {
+      return pathData;
+    }
   }
 
-  const sourceCells = toArray(source?.Cell);
-  const sourceWidth = readCellNumber(sourceCells, 'Width') ?? targetWidth;
-  const sourceHeight = readCellNumber(sourceCells, 'Height') ?? targetHeight;
+  return undefined;
+}
+
+function compileGeometrySource(source: GeometrySource, targetWidth: number, targetHeight: number): string | undefined {
+  const sourceWidth = readCellNumber(source.cells, 'Width') ?? targetWidth;
+  const sourceHeight = readCellNumber(source.cells, 'Height') ?? targetHeight;
   if (sourceWidth <= 0 || sourceHeight <= 0 || targetWidth <= 0 || targetHeight <= 0) {
     return undefined;
   }
 
-  const scaleX = targetWidth / sourceWidth;
-  const scaleY = targetHeight / sourceHeight;
+  const context: GeometryContext = {
+    targetWidth,
+    targetHeight,
+    scaleX: targetWidth / sourceWidth,
+    scaleY: targetHeight / sourceHeight,
+    scaleAverage: (Math.abs(targetWidth / sourceWidth) + Math.abs(targetHeight / sourceHeight)) / 2
+  };
   const commands: string[] = [];
-  let firstPoint: Point | undefined;
-  let lastPoint: Point | undefined;
 
-  for (const section of toArray(source?.Section)) {
-    if (String(section?.N ?? '').toLowerCase() !== 'geometry') {
-      continue;
-    }
+  for (const section of source.sections) {
+    let firstPoint: Point | undefined;
+    let lastPoint: Point | undefined;
 
     for (const row of toArray(section?.Row)) {
       if (String(row?.Del ?? '') === '1') {
         continue;
       }
       const cells = toArray(row?.Cell);
-      const x = readCellNumber(cells, 'X');
-      const y = readCellNumber(cells, 'Y');
-      if (x === undefined || y === undefined) {
-        continue;
-      }
-
-      const point = {
-        x: x * scaleX,
-        y: targetHeight - y * scaleY
-      };
       const rowType = String(row?.T ?? row?.N ?? '').toLowerCase();
-      const command = rowType === 'moveto' || commands.length === 0 ? 'M' : 'L';
-      commands.push(`${command} ${formatNumber(point.x)} ${formatNumber(point.y)}`);
-      firstPoint = firstPoint ?? point;
-      lastPoint = point;
+      const beforeLength = commands.length;
+      const result = compileGeometryRow(rowType, cells, context, commands, lastPoint);
+      if (result?.firstPoint) {
+        firstPoint = firstPoint ?? result.firstPoint;
+      }
+      if (result?.lastPoint) {
+        lastPoint = result.lastPoint;
+      }
+      if (beforeLength === commands.length && rowType === 'ellipse') {
+        firstPoint = undefined;
+        lastPoint = undefined;
+      }
+    }
+
+    if (firstPoint && lastPoint && samePoint(firstPoint, lastPoint) && commands[commands.length - 1] !== 'Z') {
+      commands.push('Z');
     }
   }
 
   if (commands.length < 2) {
     return undefined;
   }
-  if (firstPoint && lastPoint && samePoint(firstPoint, lastPoint)) {
-    commands.push('Z');
-  }
   return commands.join(' ');
 }
 
-function hasGeometrySection(shape: any): boolean {
-  return toArray(shape?.Section).some(section => String(section?.N ?? '').toLowerCase() === 'geometry');
+function compileGeometryRow(
+  rowType: string,
+  cells: any[],
+  context: GeometryContext,
+  commands: string[],
+  lastPoint: Point | undefined
+): { firstPoint?: Point; lastPoint?: Point } | undefined {
+  const relative = rowType.startsWith('rel');
+  const point = readGeometryPoint(cells, context, relative, rowType === 'moveto' || rowType === 'relmoveto' ? { x: 0, y: 0 } : undefined);
+  if (rowType === 'ellipse') {
+    return compileEllipseRow(cells, context, commands);
+  }
+  if (rowType === 'infiniteline') {
+    return compileInfiniteLineRow(cells, context, commands, relative);
+  }
+  if (rowType === 'polylineto' || rowType === 'relpolylineto') {
+    return compilePolylineRow(cells, context, commands, lastPoint, relative);
+  }
+  if (rowType === 'nurbsto') {
+    return compileNurbsRow(cells, context, commands, lastPoint, relative);
+  }
+
+  if (!point) {
+    return undefined;
+  }
+  if (rowType === 'moveto' || rowType === 'relmoveto' || commands.length === 0) {
+    commands.push(pathCommand('M', point));
+    return { firstPoint: point, lastPoint: point };
+  }
+  if (rowType === 'arcto' || rowType === 'relarcto') {
+    const bow = (readCellNumber(cells, 'A') ?? 0) * (relative ? (context.targetWidth + context.targetHeight) / 2 : context.scaleAverage);
+    const control = lastPoint ? arcControlPoint(lastPoint, point, bow) : point;
+    commands.push(`Q ${formatPoint(control)} ${formatPoint(point)}`);
+    return { lastPoint: point };
+  }
+  if (rowType === 'ellipticalarcto' || rowType === 'relellipticalarcto') {
+    const control = readGeometryPointPair(cells, 'A', 'B', context, relative);
+    if (control) {
+      commands.push(`Q ${formatPoint(control)} ${formatPoint(point)}`);
+    } else {
+      commands.push(pathCommand('L', point));
+    }
+    return { lastPoint: point };
+  }
+  if (rowType === 'quadbezto' || rowType === 'relquadbezto') {
+    const control = readGeometryPointPair(cells, 'A', 'B', context, relative);
+    commands.push(control ? `Q ${formatPoint(control)} ${formatPoint(point)}` : pathCommand('L', point));
+    return { lastPoint: point };
+  }
+  if (rowType === 'cubbezto' || rowType === 'relcubbezto') {
+    const control1 = readGeometryPointPair(cells, 'A', 'B', context, relative);
+    const control2 = readGeometryPointPair(cells, 'C', 'D', context, relative);
+    commands.push(control1 && control2 ? `C ${formatPoint(control1)} ${formatPoint(control2)} ${formatPoint(point)}` : pathCommand('L', point));
+    return { lastPoint: point };
+  }
+  if (rowType === 'splinestart' || rowType === 'splineknot') {
+    commands.push(pathCommand(lastPoint ? 'L' : 'M', point));
+    return { firstPoint: lastPoint ? undefined : point, lastPoint: point };
+  }
+
+  commands.push(pathCommand('L', point));
+  return { lastPoint: point };
+}
+
+function geometrySourcesFor(shape: any): GeometrySource[] {
+  if (!shape) {
+    return [];
+  }
+  const sections = toArray(shape?.Section)
+    .filter(section => String(section?.N ?? '').toLowerCase() === 'geometry')
+    .sort(sortGeometrySections);
+  return sections.length > 0 ? [{ cells: toArray(shape?.Cell), sections }] : [];
+}
+
+function sortGeometrySections(a: any, b: any): number {
+  return cleanNumber(a?.IX, 0) - cleanNumber(b?.IX, 0);
+}
+
+function readGeometryPoint(cells: any[], context: GeometryContext, relative: boolean, fallback?: Point): Point | undefined {
+  const x = readCellNumber(cells, 'X') ?? fallback?.x;
+  const y = readCellNumber(cells, 'Y') ?? fallback?.y;
+  return x !== undefined && y !== undefined ? toGeometryPoint(x, y, context, relative) : undefined;
+}
+
+function readGeometryPointPair(cells: any[], xName: string, yName: string, context: GeometryContext, relative: boolean): Point | undefined {
+  const x = readCellNumber(cells, xName);
+  const y = readCellNumber(cells, yName);
+  return x !== undefined && y !== undefined ? toGeometryPoint(x, y, context, relative) : undefined;
+}
+
+function compilePolylineRow(
+  cells: any[],
+  context: GeometryContext,
+  commands: string[],
+  lastPoint: Point | undefined,
+  relative: boolean
+): { firstPoint?: Point; lastPoint?: Point } | undefined {
+  const points = readFormulaPointList(cells, 'A', context, relative);
+  const endpoint = readGeometryPoint(cells, context, relative);
+  if (endpoint && !points.some(point => samePoint(point, endpoint))) {
+    points.push(endpoint);
+  }
+  if (points.length === 0) {
+    return undefined;
+  }
+
+  let firstPoint: Point | undefined;
+  let currentPoint = lastPoint;
+  for (const point of points) {
+    if (!currentPoint) {
+      commands.push(pathCommand('M', point));
+      firstPoint = point;
+    } else if (!samePoint(currentPoint, point)) {
+      commands.push(pathCommand('L', point));
+    }
+    currentPoint = point;
+  }
+  return { firstPoint, lastPoint: currentPoint };
+}
+
+function compileNurbsRow(
+  cells: any[],
+  context: GeometryContext,
+  commands: string[],
+  lastPoint: Point | undefined,
+  relative: boolean
+): { firstPoint?: Point; lastPoint?: Point } | undefined {
+  const point = readGeometryPoint(cells, context, relative);
+  if (!point) {
+    return undefined;
+  }
+
+  const formulaPoints = readFormulaPointList(cells, 'E', context, relative);
+  const visiblePoints = formulaPoints.length > 1 ? formulaPoints : [point];
+  let firstPoint: Point | undefined;
+  let currentPoint = lastPoint;
+  for (const visiblePoint of visiblePoints) {
+    if (!currentPoint && commands.length === 0) {
+      commands.push(pathCommand('M', visiblePoint));
+      firstPoint = visiblePoint;
+    } else if (!currentPoint) {
+      commands.push(pathCommand('M', visiblePoint));
+      firstPoint = visiblePoint;
+    } else {
+      commands.push(pathCommand('L', visiblePoint));
+    }
+    currentPoint = visiblePoint;
+  }
+  if (!currentPoint || !samePoint(currentPoint, point)) {
+    commands.push(pathCommand(currentPoint ? 'L' : 'M', point));
+    currentPoint = point;
+  }
+  return { firstPoint, lastPoint: currentPoint };
+}
+
+function compileEllipseRow(
+  cells: any[],
+  context: GeometryContext,
+  commands: string[]
+): { firstPoint?: Point; lastPoint?: Point } | undefined {
+  const center = readGeometryPoint(cells, context, false);
+  if (!center) {
+    return undefined;
+  }
+  const pointA = readGeometryPointPair(cells, 'A', 'B', context, false);
+  const pointB = readGeometryPointPair(cells, 'C', 'D', context, false);
+  const rx = pointA ? Math.max(0.0001, distance(center, pointA)) : context.targetWidth / 2;
+  const ry = pointB ? Math.max(0.0001, distance(center, pointB)) : context.targetHeight / 2;
+  const start = { x: center.x + rx, y: center.y };
+  const middle = { x: center.x - rx, y: center.y };
+  commands.push(
+    pathCommand('M', start),
+    `A ${formatNumber(rx)} ${formatNumber(ry)} 0 1 0 ${formatPoint(middle)}`,
+    `A ${formatNumber(rx)} ${formatNumber(ry)} 0 1 0 ${formatPoint(start)}`,
+    'Z'
+  );
+  return { firstPoint: start, lastPoint: start };
+}
+
+function compileInfiniteLineRow(
+  cells: any[],
+  context: GeometryContext,
+  commands: string[],
+  relative: boolean
+): { firstPoint?: Point; lastPoint?: Point } | undefined {
+  const start = readGeometryPoint(cells, context, relative);
+  const end = readGeometryPointPair(cells, 'A', 'B', context, relative);
+  if (!start || !end) {
+    return undefined;
+  }
+  commands.push(pathCommand('M', start), pathCommand('L', end));
+  return { firstPoint: start, lastPoint: end };
+}
+
+function toGeometryPoint(x: number, y: number, context: GeometryContext, relative: boolean): Point {
+  const scaledX = relative ? x * context.targetWidth : x * context.scaleX;
+  const scaledY = relative ? y * context.targetHeight : y * context.scaleY;
+  return {
+    x: scaledX,
+    y: context.targetHeight - scaledY
+  };
+}
+
+function arcControlPoint(start: Point, end: Point, bow: number): Point {
+  const midX = (start.x + end.x) / 2;
+  const midY = (start.y + end.y) / 2;
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 0.0001 || Math.abs(bow) < 0.0001) {
+    return { x: midX, y: midY };
+  }
+
+  return {
+    x: midX - (dy / length) * bow,
+    y: midY + (dx / length) * bow
+  };
 }
 
 function samePoint(a: Point, b: Point): boolean {
   return Math.abs(a.x - b.x) < 0.0001 && Math.abs(a.y - b.y) < 0.0001;
+}
+
+function distance(a: Point, b: Point): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function pathCommand(command: 'M' | 'L', point: Point): string {
+  return `${command} ${formatPoint(point)}`;
+}
+
+function formatPoint(point: Point): string {
+  return `${formatNumber(point.x)} ${formatNumber(point.y)}`;
+}
+
+function readFormulaPointList(cells: unknown[], name: string, context: GeometryContext, relative: boolean): Point[] {
+  const formula = readCellFormula(cells, name) ?? readCellString(cells, name);
+  const match = formula?.trim().match(/^[A-Z]+\((.*)\)$/i);
+  if (!match) {
+    return [];
+  }
+
+  const args = match[1];
+  if (/[A-Z_]/i.test(args)) {
+    return [];
+  }
+
+  const numbers = args.match(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g)?.map(Number) ?? [];
+  if (numbers.length < 4 || numbers.length % 2 !== 0 || numbers.length > 80) {
+    return [];
+  }
+
+  const points: Point[] = [];
+  for (let index = 0; index < numbers.length; index += 2) {
+    const x = numbers[index];
+    const y = numbers[index + 1];
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      points.push(toGeometryPoint(x, y, context, relative));
+    }
+  }
+  return points;
 }
 
 function setCellNumber(cells: any[], name: string, value: number): void {
