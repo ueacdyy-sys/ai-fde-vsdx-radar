@@ -944,6 +944,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         path.setAttribute('fill', shape.imageDataUri ? 'none' : safeColor(shape.fill, '#ffffff'));
         path.setAttribute('stroke', safeColor(shape.line, '#586069'));
         path.setAttribute('stroke-width', String(Math.max(0.012, numberOr(shape.strokeWidth, 0.02))));
+        applyPaintOpacity(path, shape);
         group.append(path);
       } else {
         const rect = document.createElementNS(svgNS, 'rect');
@@ -956,6 +957,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         rect.setAttribute('fill', shape.imageDataUri ? 'none' : safeColor(shape.fill, '#ffffff'));
         rect.setAttribute('stroke', safeColor(shape.line, '#586069'));
         rect.setAttribute('stroke-width', String(Math.max(0.012, numberOr(shape.strokeWidth, 0.02))));
+        applyPaintOpacity(rect, shape);
         group.append(rect);
       }
 
@@ -1051,6 +1053,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         path.setAttribute('stroke-linecap', 'round');
         path.setAttribute('stroke-linejoin', 'round');
         path.setAttribute('vector-effect', 'non-scaling-stroke');
+        applyPaintOpacity(path, shape);
         applyConnectorStyle(path, shape);
         group.append(path);
         connectorBody = path;
@@ -1064,6 +1067,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         line.setAttribute('stroke-width', String(Math.max(0.018, numberOr(shape.strokeWidth, 0.025))));
         line.setAttribute('stroke-linecap', 'round');
         line.setAttribute('vector-effect', 'non-scaling-stroke');
+        applyPaintOpacity(line, shape);
         applyConnectorStyle(line, shape);
         group.append(line);
         connectorBody = line;
@@ -1079,6 +1083,13 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         }
       });
       return group;
+    }
+
+    function applyPaintOpacity(node, shape) {
+      const fillOpacity = clamp(numberOr(shape.fillOpacity, 1), 0, 1);
+      const strokeOpacity = clamp(numberOr(shape.strokeOpacity, 1), 0, 1);
+      node.setAttribute('fill-opacity', String(fillOpacity));
+      node.setAttribute('stroke-opacity', String(strokeOpacity));
     }
 
     function applyConnectorStyle(node, shape) {

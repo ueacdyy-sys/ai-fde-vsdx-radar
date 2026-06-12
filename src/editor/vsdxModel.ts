@@ -45,7 +45,9 @@ export interface VsdxEditorShape {
   editable: boolean;
   reason?: string;
   fill: string;
+  fillOpacity?: number;
   line: string;
+  strokeOpacity?: number;
   linePattern?: number;
   strokeWidth: number;
   x?: number;
@@ -840,7 +842,9 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     name: String(shape?.Name ?? shape?.NameU ?? masterShape?.Name ?? masterShape?.NameU ?? id),
     text,
     fill: readFillColor(effectiveCells),
+    fillOpacity: readOpacityCell(effectiveCells, 'FillForegndTrans', shapeFormulaRefs),
     line: readLineColor(effectiveCells),
+    strokeOpacity: readOpacityCell(effectiveCells, 'LineColorTrans', shapeFormulaRefs),
     linePattern,
     strokeWidth: Math.max(0.015, lineWeight ?? 0.02)
   };
@@ -1565,6 +1569,14 @@ function readLineColor(cells: unknown[]): string {
   }
   return readColorCell(cells, 'LineColor')
     ?? '#586069';
+}
+
+function readOpacityCell(cells: unknown[], name: string, refs?: Map<string, number>): number | undefined {
+  const transparency = readCellNumber(cells, name, refs);
+  if (transparency === undefined) {
+    return undefined;
+  }
+  return Math.max(0, Math.min(1, 1 - Math.max(0, Math.min(100, transparency)) / 100));
 }
 
 function readColorCell(cells: unknown[], name: string): string | undefined {

@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.22 - 2026-06-12
+
+### Added
+
+- Added semantic support for Visio `FillForegndTrans` and `LineColorTrans` cells so transparent fills and strokes render with matching SVG opacity in the interactive editor.
+- Added formula-aware transparency handling, including guarded line transparency on connectors.
+- Added regression coverage for shape fill transparency, shape stroke transparency, and connector stroke transparency.
+
 ## 0.1.21 - 2026-06-12
 
 ### Added

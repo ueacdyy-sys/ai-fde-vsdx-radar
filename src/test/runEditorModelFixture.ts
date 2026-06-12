@@ -13,6 +13,7 @@ async function main(): Promise<void> {
   await verifiesFormulaOnlyShapeTransformCells();
   await verifiesTextBoxTransformCells();
   await verifiesColorFormulaAndNoPaint();
+  await verifiesPaintTransparencyCells();
   await verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle();
   await verifiesMasterChildShapeExpansion();
   await verifiesMultiRootMasterShapeExpansion();
@@ -389,6 +390,43 @@ async function verifiesColorFormulaAndNoPaint(): Promise<void> {
   assert.strictEqual(styled?.line, '#c81020');
   assert.strictEqual(noPaint?.fill, 'none');
   assert.strictEqual(noPaint?.line, 'none');
+}
+
+async function verifiesPaintTransparencyCells(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Transparent Shape">
+      <Cell N="PinX" V="2"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="FillForegnd" V="#112233"/>
+      <Cell N="FillForegndTrans" V="40"/>
+      <Cell N="LineColor" V="#445566"/>
+      <Cell N="LineColorTrans" V="75"/>
+    </Shape>
+    <Shape ID="2" NameU="Transparent Connector" OneD="1">
+      <Cell N="BeginX" V="1"/>
+      <Cell N="BeginY" V="4"/>
+      <Cell N="EndX" V="5"/>
+      <Cell N="EndY" V="4"/>
+      <Cell N="LineColor" V="#778899"/>
+      <Cell N="LineColorTrans" F="GUARD(25)"/>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'paint-transparency-fixture.vsdx');
+  const shape = diagram.pages[0]?.shapes[0];
+  const connector = diagram.pages[0]?.shapes[1];
+  assert.ok(shape, 'expected transparent shape to be parsed');
+  assert.ok(connector, 'expected transparent connector to be parsed');
+  assert.ok(Math.abs((shape.fillOpacity ?? 0) - 0.6) < 0.0001, 'expected fill transparency to become fill opacity');
+  assert.ok(Math.abs((shape.strokeOpacity ?? 0) - 0.25) < 0.0001, 'expected line transparency to become stroke opacity');
+  assert.ok(Math.abs((connector.strokeOpacity ?? 0) - 0.75) < 0.0001, 'expected formula line transparency to become connector stroke opacity');
 }
 
 async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Promise<void> {
