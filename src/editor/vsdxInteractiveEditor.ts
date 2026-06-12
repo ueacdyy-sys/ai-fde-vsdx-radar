@@ -944,6 +944,8 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         path.setAttribute('fill', shape.imageDataUri ? 'none' : safeColor(shape.fill, '#ffffff'));
         path.setAttribute('stroke', safeColor(shape.line, '#586069'));
         path.setAttribute('stroke-width', String(Math.max(0.012, numberOr(shape.strokeWidth, 0.02))));
+        path.setAttribute('stroke-linecap', lineCap(shape));
+        path.setAttribute('stroke-linejoin', 'round');
         applyPaintOpacity(path, shape);
         group.append(path);
       } else {
@@ -957,6 +959,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         rect.setAttribute('fill', shape.imageDataUri ? 'none' : safeColor(shape.fill, '#ffffff'));
         rect.setAttribute('stroke', safeColor(shape.line, '#586069'));
         rect.setAttribute('stroke-width', String(Math.max(0.012, numberOr(shape.strokeWidth, 0.02))));
+        rect.setAttribute('stroke-linecap', lineCap(shape));
         applyPaintOpacity(rect, shape);
         group.append(rect);
       }
@@ -1057,7 +1060,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         path.setAttribute('fill', 'none');
         path.setAttribute('stroke', safeColor(shape.line, '#3b82f6'));
         path.setAttribute('stroke-width', String(Math.max(0.018, numberOr(shape.strokeWidth, 0.025))));
-        path.setAttribute('stroke-linecap', 'round');
+        path.setAttribute('stroke-linecap', lineCap(shape));
         path.setAttribute('stroke-linejoin', 'round');
         path.setAttribute('vector-effect', 'non-scaling-stroke');
         applyPaintOpacity(path, shape);
@@ -1072,7 +1075,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         line.setAttribute('y2', String(y2));
         line.setAttribute('stroke', safeColor(shape.line, '#3b82f6'));
         line.setAttribute('stroke-width', String(Math.max(0.018, numberOr(shape.strokeWidth, 0.025))));
-        line.setAttribute('stroke-linecap', 'round');
+        line.setAttribute('stroke-linecap', lineCap(shape));
         line.setAttribute('vector-effect', 'non-scaling-stroke');
         applyPaintOpacity(line, shape);
         applyConnectorStyle(line, shape);
@@ -1097,6 +1100,17 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       const strokeOpacity = clamp(numberOr(shape.strokeOpacity, 1), 0, 1);
       node.setAttribute('fill-opacity', String(fillOpacity));
       node.setAttribute('stroke-opacity', String(strokeOpacity));
+    }
+
+    function lineCap(shape) {
+      const cap = Math.round(numberOr(shape.lineCap, 0));
+      if (cap === 1) {
+        return 'round';
+      }
+      if (cap === 2) {
+        return 'square';
+      }
+      return 'butt';
     }
 
     function applyConnectorStyle(node, shape) {

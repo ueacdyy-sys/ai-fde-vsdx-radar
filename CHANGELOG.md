@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.24 - 2026-06-12
+
+### Added
+
+- Added semantic support for Visio `LineCap` cells so butt, round, and square line caps render in the interactive SVG editor instead of always using a fixed rounded connector cap.
+- Added `LineCap` inheritance through StyleSheet, master, page-shape, and legacy Visio XML paths.
+- Added regression coverage for direct legacy XML line caps and inherited modern/legacy line caps on shapes and connectors.
+
 ## 0.1.23 - 2026-06-12
 
 ### Added

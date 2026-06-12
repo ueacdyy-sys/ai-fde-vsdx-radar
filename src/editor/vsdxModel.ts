@@ -49,6 +49,7 @@ export interface VsdxEditorShape {
   line: string;
   strokeOpacity?: number;
   linePattern?: number;
+  lineCap?: number;
   strokeWidth: number;
   x?: number;
   y?: number;
@@ -176,6 +177,7 @@ const legacyXmlCellNames = new Set([
   'LineWeight',
   'LineColor',
   'LinePattern',
+  'LineCap',
   'FillForegnd',
   'FillPattern',
   'Color',
@@ -844,6 +846,7 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const shapeFormulaRefs = createShapeFormulaRefs(effectiveCells, context.formulaRefs);
   const lineWeight = readCellNumber(effectiveCells, 'LineWeight', shapeFormulaRefs);
   const linePattern = readCellNumber(effectiveCells, 'LinePattern', shapeFormulaRefs);
+  const lineCap = readCellNumber(effectiveCells, 'LineCap', shapeFormulaRefs);
   const beginArrow = readCellNumber(effectiveCells, 'BeginArrow', shapeFormulaRefs);
   const endArrow = readCellNumber(effectiveCells, 'EndArrow', shapeFormulaRefs);
   const angle = readCellNumber(effectiveCells, 'Angle', shapeFormulaRefs) ?? 0;
@@ -865,6 +868,7 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     line: readLineColor(effectiveCells),
     strokeOpacity: readOpacityCell(effectiveCells, 'LineColorTrans', shapeFormulaRefs),
     linePattern,
+    lineCap,
     strokeWidth: Math.max(0.015, lineWeight ?? 0.02)
   };
   if (textBox) {
