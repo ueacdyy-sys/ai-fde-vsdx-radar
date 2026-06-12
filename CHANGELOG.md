@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.27 - 2026-06-12
+
+### Added
+
+- Added semantic support for Visio shadow cells, including `ShdwPattern`, `ShdwForegnd`, `ShdwForegndTrans`, `ShapeShdwOffsetX`, `ShapeShdwOffsetY`, and `ShapeShdwScaleFactor`, so shape shadows render in the interactive editor.
+- Added shadow inheritance through StyleSheet, master, page-shape, formula, and legacy Visio XML paths while staying on the fast local XML/ZIP preview path.
+- Added regression coverage for direct modern Visio package shadows, inherited StyleSheet shadows, disabled shadows, and legacy Visio XML shadow metadata.
+
 ## 0.1.26 - 2026-06-12
 
 ### Added

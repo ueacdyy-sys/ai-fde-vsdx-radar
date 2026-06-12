@@ -50,6 +50,7 @@ export interface VsdxEditorShape {
   strokeOpacity?: number;
   linePattern?: number;
   lineCap?: number;
+  shadow?: VsdxEditorShadow;
   strokeWidth: number;
   x?: number;
   y?: number;
@@ -68,6 +69,14 @@ export interface VsdxEditorShape {
   endArrow?: number;
   beginArrowSize?: number;
   endArrowSize?: number;
+}
+
+export interface VsdxEditorShadow {
+  color: string;
+  opacity: number;
+  offsetX: number;
+  offsetY: number;
+  scale?: number;
 }
 
 export interface VsdxEditorTextBox {
@@ -186,6 +195,15 @@ const legacyXmlCellNames = new Set([
   'EndArrowSize',
   'FillForegnd',
   'FillPattern',
+  'ShdwForegnd',
+  'ShdwForegndTrans',
+  'ShdwPattern',
+  'ShapeShdwType',
+  'ShapeShdwShow',
+  'ShapeShdwBlur',
+  'ShapeShdwOffsetX',
+  'ShapeShdwOffsetY',
+  'ShapeShdwScaleFactor',
   'Color',
   'Char.Color',
   'Size',
@@ -247,7 +265,10 @@ const fillStyleCellNames = new Set([
   'ShdwForegnd',
   'ShdwBkgnd',
   'ShdwPattern',
+  'ShdwForegndTrans',
   'ShapeShdwType',
+  'ShapeShdwShow',
+  'ShapeShdwBlur',
   'ShapeShdwOffsetX',
   'ShapeShdwOffsetY',
   'ShapeShdwScaleFactor'
@@ -863,6 +884,7 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const angle = readCellNumber(effectiveCells, 'Angle', shapeFormulaRefs) ?? 0;
   const textBox = readTextBox(effectiveCells, shapeFormulaRefs);
   const textStyle = readTextStyle(effectiveCells, effectiveSections, shapeFormulaRefs);
+  const shadow = readShadowStyle(effectiveCells, shapeFormulaRefs);
   const hasChildShapes = toArray(shape?.Shapes?.Shape).length > 0;
   const isConnector = isConnectorShape(shape) || isConnectorShape(masterShape);
   const text = readShapeText(shape) || readShapeText(masterShape);
@@ -880,6 +902,7 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     strokeOpacity: readOpacityCell(effectiveCells, 'LineColorTrans', shapeFormulaRefs),
     linePattern,
     lineCap,
+    shadow,
     beginArrowSize,
     endArrowSize,
     strokeWidth: Math.max(0.015, lineWeight ?? 0.02)
@@ -1651,6 +1674,56 @@ function readLineColor(cells: unknown[]): string {
   }
   return readColorCell(cells, 'LineColor')
     ?? '#586069';
+}
+
+function readShadowStyle(cells: unknown[], refs?: Map<string, number>): VsdxEditorShadow | undefined {
+  const show = readCellNumber(cells, 'ShapeShdwShow', refs);
+  if (show === 0) {
+    return undefined;
+  }
+  const pattern = readCellNumber(cells, 'ShdwPattern', refs);
+  if (pattern === 0) {
+    return undefined;
+  }
+
+  const color = readColorCell(cells, 'ShdwForegnd') ?? '#000000';
+  const opacity = readOpacityCell(cells, 'ShdwForegndTrans', refs) ?? 0.28;
+  const offsetX = readShadowOffsetCell(cells, 'ShapeShdwOffsetX', refs);
+  const offsetY = readShadowOffsetCell(cells, 'ShapeShdwOffsetY', refs);
+  const scale = readShadowScaleCell(cells, refs);
+  const hasEvidence = pattern !== undefined
+    || show !== undefined
+    || offsetX !== undefined
+    || offsetY !== undefined
+    || scale !== undefined
+    || readColorCell(cells, 'ShdwForegnd') !== undefined
+    || readOpacityCell(cells, 'ShdwForegndTrans', refs) !== undefined;
+
+  if (!hasEvidence || opacity <= 0) {
+    return undefined;
+  }
+
+  return {
+    color,
+    opacity: Math.max(0, Math.min(1, opacity)),
+    offsetX: offsetX ?? 0.06,
+    offsetY: offsetY ?? -0.06,
+    scale
+  };
+}
+
+function readShadowOffsetCell(cells: unknown[], name: string, refs?: Map<string, number>): number | undefined {
+  const cell = cells.find((candidate: any) => candidate?.N === name) as any;
+  return readCellNumber(cells, name, refs) ?? readUnitNumber(cell?.V) ?? readUnitNumber(cell?.F);
+}
+
+function readShadowScaleCell(cells: unknown[], refs?: Map<string, number>): number | undefined {
+  const cell = cells.find((candidate: any) => candidate?.N === 'ShapeShdwScaleFactor') as any;
+  const value = readCellNumber(cells, 'ShapeShdwScaleFactor', refs) ?? readUnitNumber(cell?.V) ?? readUnitNumber(cell?.F);
+  if (value === undefined || !Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  return value > 10 ? value / 100 : value;
 }
 
 function readOpacityCell(cells: unknown[], name: string, refs?: Map<string, number>): number | undefined {

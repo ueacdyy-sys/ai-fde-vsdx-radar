@@ -429,6 +429,9 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
     .shape-outline {
       vector-effect: non-scaling-stroke;
     }
+    .shape-shadow {
+      pointer-events: none;
+    }
     .selected .shape-outline,
     .selected.connector-node {
       stroke: var(--accent);
@@ -942,6 +945,10 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         const degrees = -angle * 180 / Math.PI;
         group.setAttribute('transform', 'rotate(' + degrees + ' ' + (x + width / 2) + ' ' + (y + height / 2) + ')');
       }
+      const shadow = renderShapeShadow(shape, x, y, width, height);
+      if (shadow) {
+        group.append(shadow);
+      }
       if (shape.imageDataUri) {
         const image = document.createElementNS(svgNS, 'image');
         image.setAttribute('x', String(x));
@@ -1036,6 +1043,46 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         event.preventDefault();
         editText(shape);
       });
+      return group;
+    }
+
+    function renderShapeShadow(shape, x, y, width, height) {
+      const style = shape.shadow || {};
+      const fill = safeColor(style.color, 'none');
+      const opacity = clamp(numberOr(style.opacity, 0), 0, 1);
+      if (fill === 'none' || opacity <= 0) {
+        return null;
+      }
+      const dx = numberOr(style.offsetX, 0.06);
+      const dy = -numberOr(style.offsetY, -0.06);
+      const scale = clamp(numberOr(style.scale, 1), 0.2, 3);
+      const group = document.createElementNS(svgNS, 'g');
+      group.classList.add('shape-shadow');
+      if (Math.abs(scale - 1) > 0.0001) {
+        const cx = x + dx + width / 2;
+        const cy = y + dy + height / 2;
+        group.setAttribute('transform', 'translate(' + cx + ' ' + cy + ') scale(' + scale + ') translate(' + (-cx) + ' ' + (-cy) + ')');
+      }
+      if (shape.geometryPath) {
+        const path = document.createElementNS(svgNS, 'path');
+        path.setAttribute('d', shape.geometryPath);
+        path.setAttribute('transform', 'translate(' + (x + dx) + ' ' + (y + dy) + ')');
+        path.setAttribute('fill', fill);
+        path.setAttribute('fill-opacity', String(opacity));
+        path.setAttribute('stroke', 'none');
+        group.append(path);
+        return group;
+      }
+
+      const rect = document.createElementNS(svgNS, 'rect');
+      rect.setAttribute('x', String(x + dx));
+      rect.setAttribute('y', String(y + dy));
+      rect.setAttribute('width', String(width));
+      rect.setAttribute('height', String(height));
+      rect.setAttribute('rx', String(Math.min(0.08, height / 6)));
+      rect.setAttribute('fill', fill);
+      rect.setAttribute('fill-opacity', String(opacity));
+      group.append(rect);
       return group;
     }
 
