@@ -98,8 +98,16 @@ export interface VsdxEditorTextStyle {
   underline?: boolean;
   horizontalAlign?: 'left' | 'center' | 'right';
   verticalAlign?: 'top' | 'middle' | 'bottom';
+  margins?: VsdxEditorTextMargins;
   background?: string;
   backgroundOpacity?: number;
+}
+
+export interface VsdxEditorTextMargins {
+  left?: number;
+  right?: number;
+  top?: number;
+  bottom?: number;
 }
 
 export interface VsdxEditorShapeUpdate {
@@ -222,6 +230,10 @@ const legacyXmlCellNames = new Set([
   'HAlign',
   'HorzAlign',
   'VerticalAlign',
+  'LeftMargin',
+  'RightMargin',
+  'TopMargin',
+  'BottomMargin',
   'TextBkgnd',
   'TextBkgndTrans',
   'TxtPinX',
@@ -298,6 +310,10 @@ const textStyleCellNames = new Set([
   'HAlign',
   'HorzAlign',
   'VerticalAlign',
+  'LeftMargin',
+  'RightMargin',
+  'TopMargin',
+  'BottomMargin',
   'TextPosAfterBullet',
   'TextBkgnd',
   'TextBkgndTrans',
@@ -1621,6 +1637,7 @@ function readTextStyle(cells: unknown[], sections: any[], refs: Map<string, numb
   const horizontalAlign = readHorizontalAlign(paragraphCells, refs)
     ?? readHorizontalAlign(cells, refs);
   const verticalAlign = readVerticalAlign(cells, refs);
+  const margins = readTextMargins(cells, refs);
   const background = readColorCell(cells, 'TextBkgnd');
   const backgroundOpacity = readOpacityCell(cells, 'TextBkgndTrans', refs);
   const style: VsdxEditorTextStyle = {};
@@ -1640,6 +1657,9 @@ function readTextStyle(cells: unknown[], sections: any[], refs: Map<string, numb
   }
   if (verticalAlign) {
     style.verticalAlign = verticalAlign;
+  }
+  if (margins) {
+    style.margins = margins;
   }
   if (background) {
     style.background = background;
@@ -1686,6 +1706,36 @@ function readVerticalAlign(cells: unknown[], refs?: Map<string, number>): VsdxEd
     return 'bottom';
   }
   return 'middle';
+}
+
+function readTextMargins(cells: unknown[], refs?: Map<string, number>): VsdxEditorTextMargins | undefined {
+  const margins: VsdxEditorTextMargins = {};
+  const left = readTextMarginCell(cells, 'LeftMargin', refs);
+  const right = readTextMarginCell(cells, 'RightMargin', refs);
+  const top = readTextMarginCell(cells, 'TopMargin', refs);
+  const bottom = readTextMarginCell(cells, 'BottomMargin', refs);
+  if (left !== undefined) {
+    margins.left = left;
+  }
+  if (right !== undefined) {
+    margins.right = right;
+  }
+  if (top !== undefined) {
+    margins.top = top;
+  }
+  if (bottom !== undefined) {
+    margins.bottom = bottom;
+  }
+  return Object.keys(margins).length > 0 ? margins : undefined;
+}
+
+function readTextMarginCell(cells: unknown[], name: string, refs?: Map<string, number>): number | undefined {
+  const cell = cells.find((candidate: any) => candidate?.N === name) as any;
+  const value = readCellNumber(cells, name, refs) ?? readUnitNumber(cell?.V) ?? readUnitNumber(cell?.F);
+  if (value === undefined || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return Math.max(0, value);
 }
 
 function readPrimaryCharacterCells(sections: any[]): any[] {

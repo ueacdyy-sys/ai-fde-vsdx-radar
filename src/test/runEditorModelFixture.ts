@@ -554,6 +554,10 @@ async function verifiesTextStyleCells(): Promise<void> {
       <Cell N="Size" V="18" U="PT"/>
       <Cell N="Style" V="5"/>
       <Cell N="VerticalAlign" V="0"/>
+      <Cell N="LeftMargin" V="0.11"/>
+      <Cell N="RightMargin" F="GUARD(0.12)"/>
+      <Cell N="TopMargin" V="0.13"/>
+      <Cell N="BottomMargin" V="0.14"/>
       <Cell N="TextBkgnd" V="#ffeeaa"/>
       <Cell N="TextBkgndTrans" V="25"/>
       <Text>Direct text style</Text>
@@ -583,6 +587,10 @@ async function verifiesTextStyleCells(): Promise<void> {
   assert.strictEqual(direct?.textStyle?.italic, false, 'expected direct text italic style');
   assert.strictEqual(direct?.textStyle?.underline, true, 'expected direct text underline style');
   assert.strictEqual(direct?.textStyle?.verticalAlign, 'top', 'expected direct text vertical alignment');
+  assert.ok(Math.abs((direct?.textStyle?.margins?.left ?? 0) - 0.11) < 0.0001, 'expected direct left text margin');
+  assert.ok(Math.abs((direct?.textStyle?.margins?.right ?? 0) - 0.12) < 0.0001, 'expected formula right text margin');
+  assert.ok(Math.abs((direct?.textStyle?.margins?.top ?? 0) - 0.13) < 0.0001, 'expected direct top text margin');
+  assert.ok(Math.abs((direct?.textStyle?.margins?.bottom ?? 0) - 0.14) < 0.0001, 'expected direct bottom text margin');
   assert.strictEqual(direct?.textStyle?.background, '#ffeeaa', 'expected direct text background to be parsed');
   assert.ok(Math.abs((direct?.textStyle?.backgroundOpacity ?? 0) - 0.75) < 0.0001, 'expected text background transparency to become opacity');
   assert.strictEqual(character?.textStyle?.color, '#112233', 'expected character row text color to be parsed');
@@ -613,6 +621,8 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
       <Cell N="LineColor" V="#112233"/>
       <Cell N="LineWeight" V="0.02"/>
       <Cell N="VerticalAlign" V="2"/>
+      <Cell N="LeftMargin" V="0.09"/>
+      <Cell N="RightMargin" V="0.08"/>
       <Section N="Character" IX="0"><Row IX="0"><Cell N="Style" V="3"/></Row></Section>
       <Section N="Paragraph" IX="0"><Row IX="0"><Cell N="HAlign" V="0"/></Row></Section>
     </StyleSheet>
@@ -708,6 +718,8 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
   assert.strictEqual(direct?.textStyle?.underline, false, 'expected page shape underline text style to inherit from TextStyle');
   assert.strictEqual(direct?.textStyle?.horizontalAlign, 'left', 'expected page shape horizontal text alignment to inherit from TextStyle');
   assert.strictEqual(direct?.textStyle?.verticalAlign, 'bottom', 'expected page shape vertical text alignment to inherit from TextStyle');
+  assert.ok(Math.abs((direct?.textStyle?.margins?.left ?? 0) - 0.09) < 0.0001, 'expected page shape left margin to inherit from TextStyle');
+  assert.ok(Math.abs((direct?.textStyle?.margins?.right ?? 0) - 0.08) < 0.0001, 'expected page shape right margin to inherit from TextStyle');
   assert.strictEqual(direct?.linePattern, 2, 'expected page shape line pattern to inherit from LineStyle');
   assert.strictEqual(direct?.lineCap, 1, 'expected page shape line cap to inherit from LineStyle');
   assert.strictEqual(direct?.shadow?.color, '#222222', 'expected page shape shadow color to inherit from FillStyle');
@@ -1055,7 +1067,15 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
             <TxtLocPinX>0.5</TxtLocPinX>
             <TxtLocPinY>0.25</TxtLocPinY>
           </TextXForm>
-          <TextBlock><TextBkgnd>#ddeeff</TextBkgnd><TextBkgndTrans>50</TextBkgndTrans><VerticalAlign>2</VerticalAlign></TextBlock>
+          <TextBlock>
+            <TextBkgnd>#ddeeff</TextBkgnd>
+            <TextBkgndTrans>50</TextBkgndTrans>
+            <VerticalAlign>2</VerticalAlign>
+            <LeftMargin>0.03</LeftMargin>
+            <RightMargin>0.04</RightMargin>
+            <TopMargin>0.05</TopMargin>
+            <BottomMargin>0.06</BottomMargin>
+          </TextBlock>
           <Para IX="0">
             <HAlign>2</HAlign>
           </Para>
@@ -1115,6 +1135,10 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.strictEqual(shape.textStyle?.underline, true, 'expected legacy XML text underline metadata');
   assert.strictEqual(shape.textStyle?.horizontalAlign, 'right', 'expected legacy XML text horizontal alignment metadata');
   assert.strictEqual(shape.textStyle?.verticalAlign, 'bottom', 'expected legacy XML text vertical alignment metadata');
+  assert.ok(Math.abs((shape.textStyle?.margins?.left ?? 0) - 0.03) < 0.0001, 'expected legacy XML left text margin metadata');
+  assert.ok(Math.abs((shape.textStyle?.margins?.right ?? 0) - 0.04) < 0.0001, 'expected legacy XML right text margin metadata');
+  assert.ok(Math.abs((shape.textStyle?.margins?.top ?? 0) - 0.05) < 0.0001, 'expected legacy XML top text margin metadata');
+  assert.ok(Math.abs((shape.textStyle?.margins?.bottom ?? 0) - 0.06) < 0.0001, 'expected legacy XML bottom text margin metadata');
   assert.strictEqual(shape.textStyle?.background, '#ddeeff', 'expected legacy XML text background metadata');
   assert.ok(Math.abs((shape.textStyle?.backgroundOpacity ?? 0) - 0.5) < 0.0001, 'expected legacy XML text background transparency metadata');
   assert.ok(Math.abs((shape.textBox?.x ?? 0) - 1) < 0.0001, 'expected legacy XML text box x');
@@ -1189,6 +1213,8 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
       <Cell N="TextBkgnd" V="#f0f0f0"/>
       <Cell N="TextBkgndTrans" V="20"/>
       <Cell N="VerticalAlign" V="0"/>
+      <Cell N="TopMargin" V="0.07"/>
+      <Cell N="BottomMargin" V="0.08"/>
       <Section N="Character" IX="0"><Row IX="0"><Cell N="Color" V="#123456"/><Cell N="Size" V="16" U="PT"/><Cell N="Style" V="4"/></Row></Section>
       <Section N="Paragraph" IX="0"><Row IX="0"><Cell N="HAlign" V="1"/></Row></Section>
     </StyleSheet>
@@ -1237,6 +1263,8 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
   assert.strictEqual(shape?.textStyle?.underline, true, 'expected legacy XML TextStyle underline to be applied');
   assert.strictEqual(shape?.textStyle?.horizontalAlign, 'center', 'expected legacy XML TextStyle horizontal alignment to be applied');
   assert.strictEqual(shape?.textStyle?.verticalAlign, 'top', 'expected legacy XML TextStyle vertical alignment to be applied');
+  assert.ok(Math.abs((shape?.textStyle?.margins?.top ?? 0) - 0.07) < 0.0001, 'expected legacy XML TextStyle top margin to be applied');
+  assert.ok(Math.abs((shape?.textStyle?.margins?.bottom ?? 0) - 0.08) < 0.0001, 'expected legacy XML TextStyle bottom margin to be applied');
   assert.strictEqual(shape?.textStyle?.background, '#f0f0f0', 'expected legacy XML TextStyle background to be applied');
   assert.ok(Math.abs((shape?.textStyle?.backgroundOpacity ?? 0) - 0.8) < 0.0001, 'expected legacy XML TextStyle background opacity to be applied');
 }

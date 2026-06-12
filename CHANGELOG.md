@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.32 - 2026-06-12
+
+### Added
+
+- Added semantic support for Visio Text Block margin cells: `LeftMargin`, `RightMargin`, `TopMargin`, and `BottomMargin`.
+- Applied text margins to the interactive editor's SVG text layout while keeping text backgrounds on the full TextBlock bounds.
+- Added regression coverage for direct modern Visio package margins, formula margins, inherited TextStyle margins, and legacy Visio XML `TextBlock` margin metadata.
+
 ## 0.1.31 - 2026-06-12
 
 ### Added

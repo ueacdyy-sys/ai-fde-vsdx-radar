@@ -995,6 +995,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
 
       if (shape.text) {
         const textBox = resolveTextBox(page, shape, x, y, width, height);
+        const contentBox = resolveTextContentBox(shape, textBox);
         const textBackground = renderTextBackground(shape, textBox);
         if (textBackground) {
           group.append(textBackground);
@@ -1007,11 +1008,11 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         }
         text.style.fill = safeColor(shape.textStyle && shape.textStyle.color, '#111827');
         applyTextStyle(text, shape);
-        const fontSize = textFontSize(shape, textBox);
+        const fontSize = textFontSize(shape, contentBox);
         text.setAttribute('font-size', String(fontSize));
         const lines = String(shape.text).replace(/\\r/g, '').split('\\n').filter(line => line.length > 0);
-        const lineHeight = Math.min(Math.max(fontSize * 1.2, 0.08), Math.max(0.08, textBox.height / Math.max(2, lines.length + 1)));
-        const textPosition = resolveTextPosition(shape, textBox, lines.length, lineHeight);
+        const lineHeight = Math.min(Math.max(fontSize * 1.2, 0.08), Math.max(0.08, contentBox.height / Math.max(2, lines.length + 1)));
+        const textPosition = resolveTextPosition(shape, contentBox, lines.length, lineHeight);
         text.setAttribute('x', String(textPosition.x));
         text.setAttribute('y', String(textPosition.y));
         text.setAttribute('text-anchor', textPosition.anchor);
@@ -1186,6 +1187,21 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         width,
         height,
         angle: numberOr(box.angle, 0)
+      };
+    }
+
+    function resolveTextContentBox(shape, textBox) {
+      const margins = (shape.textStyle && shape.textStyle.margins) || {};
+      const left = clamp(numberOr(margins.left, 0), 0, textBox.width / 2);
+      const right = clamp(numberOr(margins.right, 0), 0, Math.max(0, textBox.width - left - 0.02));
+      const top = clamp(numberOr(margins.top, 0), 0, textBox.height / 2);
+      const bottom = clamp(numberOr(margins.bottom, 0), 0, Math.max(0, textBox.height - top - 0.02));
+      return {
+        x: textBox.x + left,
+        y: textBox.y + top,
+        width: Math.max(0.05, textBox.width - left - right),
+        height: Math.max(0.05, textBox.height - top - bottom),
+        angle: textBox.angle
       };
     }
 
