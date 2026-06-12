@@ -107,6 +107,7 @@ interface FormulaToken {
 
 interface PointTransform {
   toPage(point: Point): Point;
+  toLocal(point: Point): Point;
 }
 
 interface EditorShapeContext {
@@ -874,7 +875,12 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   };
 }
 
-function applyShapeUpdates(shapes: any[], updateById: Map<string, VsdxEditorShape>, parentPath = ''): void {
+function applyShapeUpdates(
+  shapes: any[],
+  updateById: Map<string, VsdxEditorShape>,
+  parentPath = '',
+  parentTransform?: PointTransform
+): void {
   const idCounts = countShapeIds(shapes);
   const seenIds = new Map<string, number>();
 
@@ -882,17 +888,22 @@ function applyShapeUpdates(shapes: any[], updateById: Map<string, VsdxEditorShap
     const id = createModelShapeId(shape, index, parentPath, idCounts, seenIds);
     const update = id ? updateById.get(id) : undefined;
     if (update?.editable) {
-      applyShapeUpdate(shape, update);
+      applyShapeUpdate(shape, update, parentTransform);
     }
 
     const childShapes = toArray(shape?.Shapes?.Shape);
     if (childShapes.length > 0) {
-      applyShapeUpdates(childShapes, updateById, id);
+      applyShapeUpdates(childShapes, updateById, id, createLocalToPageTransform(shape, parentTransform));
     }
   });
 }
 
-function applyLegacyXmlShapeUpdates(shapes: any[], updateById: Map<string, VsdxEditorShape>, parentPath = ''): void {
+function applyLegacyXmlShapeUpdates(
+  shapes: any[],
+  updateById: Map<string, VsdxEditorShape>,
+  parentPath = '',
+  parentTransform?: PointTransform
+): void {
   const idCounts = countShapeIds(shapes);
   const seenIds = new Map<string, number>();
 
@@ -900,12 +911,12 @@ function applyLegacyXmlShapeUpdates(shapes: any[], updateById: Map<string, VsdxE
     const id = createModelShapeId(shape, index, parentPath, idCounts, seenIds);
     const update = id ? updateById.get(id) : undefined;
     if (update?.editable) {
-      applyLegacyXmlShapeUpdate(shape, update);
+      applyLegacyXmlShapeUpdate(shape, update, parentTransform);
     }
 
     const childShapes = toArray(shape?.Shapes?.Shape);
     if (childShapes.length > 0) {
-      applyLegacyXmlShapeUpdates(childShapes, updateById, id);
+      applyLegacyXmlShapeUpdates(childShapes, updateById, id, createLocalToPageTransform(shape, parentTransform));
     }
   });
 }
@@ -943,17 +954,17 @@ function writeLegacyXmlDiagram(sourceBytes: Buffer, diagram: VsdxEditorDiagram):
   return Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>\n${body}`, 'utf8');
 }
 
-function applyShapeUpdate(shape: any, update: VsdxEditorShape): void {
+function applyShapeUpdate(shape: any, update: VsdxEditorShape, parentTransform?: PointTransform): void {
   const cells = ensureArrayProperty(shape, 'Cell');
   if (update.kind === 'connector') {
-    const begin = {
+    const begin = toWriteLocalPoint({
       x: cleanNumber(update.beginX, 0),
       y: cleanNumber(update.beginY, 0)
-    };
-    const end = {
+    }, parentTransform);
+    const end = toWriteLocalPoint({
       x: cleanNumber(update.endX, 0),
       y: cleanNumber(update.endY, 0)
-    };
+    }, parentTransform);
     setCellNumber(cells, 'BeginX', begin.x);
     setCellNumber(cells, 'BeginY', begin.y);
     setCellNumber(cells, 'EndX', end.x);
@@ -963,12 +974,15 @@ function applyShapeUpdate(shape: any, update: VsdxEditorShape): void {
     return;
   }
 
-  const width = Math.max(0.05, cleanNumber(update.width, 1));
-  const height = Math.max(0.05, cleanNumber(update.height, 0.6));
-  const pinX = cleanNumber(update.x, 0) + width / 2;
-  const pinY = cleanNumber(update.y, 0) + height / 2;
-  setCellNumber(cells, 'PinX', pinX);
-  setCellNumber(cells, 'PinY', pinY);
+  const pageWidth = Math.max(0.05, cleanNumber(update.width, 1));
+  const pageHeight = Math.max(0.05, cleanNumber(update.height, 0.6));
+  const { width, height } = resolveShapeWriteSize(shape, update, parentTransform);
+  const center = toWriteLocalPoint({
+    x: cleanNumber(update.x, 0) + pageWidth / 2,
+    y: cleanNumber(update.y, 0) + pageHeight / 2
+  }, parentTransform);
+  setCellNumber(cells, 'PinX', center.x);
+  setCellNumber(cells, 'PinY', center.y);
   setCellNumber(cells, 'Width', width);
   setCellNumber(cells, 'Height', height);
   setCellNumber(cells, 'LocPinX', width / 2);
@@ -976,16 +990,16 @@ function applyShapeUpdate(shape: any, update: VsdxEditorShape): void {
   writeShapeText(shape, update.text);
 }
 
-function applyLegacyXmlShapeUpdate(shape: any, update: VsdxEditorShape): void {
+function applyLegacyXmlShapeUpdate(shape: any, update: VsdxEditorShape, parentTransform?: PointTransform): void {
   if (update.kind === 'connector') {
-    const begin = {
+    const begin = toWriteLocalPoint({
       x: cleanNumber(update.beginX, 0),
       y: cleanNumber(update.beginY, 0)
-    };
-    const end = {
+    }, parentTransform);
+    const end = toWriteLocalPoint({
       x: cleanNumber(update.endX, 0),
       y: cleanNumber(update.endY, 0)
-    };
+    }, parentTransform);
     setLegacyXmlCellNumber(shape, 'BeginX', begin.x, 'XForm1D');
     setLegacyXmlCellNumber(shape, 'BeginY', begin.y, 'XForm1D');
     setLegacyXmlCellNumber(shape, 'EndX', end.x, 'XForm1D');
@@ -995,17 +1009,73 @@ function applyLegacyXmlShapeUpdate(shape: any, update: VsdxEditorShape): void {
     return;
   }
 
-  const width = Math.max(0.05, cleanNumber(update.width, 1));
-  const height = Math.max(0.05, cleanNumber(update.height, 0.6));
-  const pinX = cleanNumber(update.x, 0) + width / 2;
-  const pinY = cleanNumber(update.y, 0) + height / 2;
-  setLegacyXmlCellNumber(shape, 'PinX', pinX, 'XForm');
-  setLegacyXmlCellNumber(shape, 'PinY', pinY, 'XForm');
+  const pageWidth = Math.max(0.05, cleanNumber(update.width, 1));
+  const pageHeight = Math.max(0.05, cleanNumber(update.height, 0.6));
+  const { width, height } = resolveShapeWriteSize(shape, update, parentTransform);
+  const center = toWriteLocalPoint({
+    x: cleanNumber(update.x, 0) + pageWidth / 2,
+    y: cleanNumber(update.y, 0) + pageHeight / 2
+  }, parentTransform);
+  setLegacyXmlCellNumber(shape, 'PinX', center.x, 'XForm');
+  setLegacyXmlCellNumber(shape, 'PinY', center.y, 'XForm');
   setLegacyXmlCellNumber(shape, 'Width', width, 'XForm');
   setLegacyXmlCellNumber(shape, 'Height', height, 'XForm');
   setLegacyXmlCellNumber(shape, 'LocPinX', width / 2, 'XForm');
   setLegacyXmlCellNumber(shape, 'LocPinY', height / 2, 'XForm');
   writeShapeText(shape, update.text);
+}
+
+function toWriteLocalPoint(point: Point, parentTransform?: PointTransform): Point {
+  return parentTransform ? parentTransform.toLocal(point) : point;
+}
+
+function nearlyEqual(left: number, right: number, tolerance = 0.0001): boolean {
+  return Math.abs(left - right) < tolerance;
+}
+
+function resolveShapeWriteSize(
+  shape: any,
+  update: VsdxEditorShape,
+  parentTransform?: PointTransform
+): { width: number; height: number } {
+  const requestedWidth = Math.max(0.05, cleanNumber(update.width, 1));
+  const requestedHeight = Math.max(0.05, cleanNumber(update.height, 0.6));
+  if (!parentTransform) {
+    return { width: requestedWidth, height: requestedHeight };
+  }
+
+  const localCells = shapeTransformCells(shape);
+  const localWidth = readCellNumber(localCells, 'Width');
+  const localHeight = readCellNumber(localCells, 'Height');
+  if (localWidth === undefined || localHeight === undefined) {
+    return { width: requestedWidth, height: requestedHeight };
+  }
+
+  const currentPageBounds = transformedLocalBounds(localWidth, localHeight, createLocalToPageTransform(shape, parentTransform));
+  if (
+    currentPageBounds
+    && nearlyEqual(requestedWidth, currentPageBounds.width)
+    && nearlyEqual(requestedHeight, currentPageBounds.height)
+  ) {
+    return { width: Math.max(0.05, localWidth), height: Math.max(0.05, localHeight) };
+  }
+
+  const left = cleanNumber(update.x, 0);
+  const bottom = cleanNumber(update.y, 0);
+  const right = left + requestedWidth;
+  const top = bottom + requestedHeight;
+  const localPoints = [
+    parentTransform.toLocal({ x: left, y: bottom }),
+    parentTransform.toLocal({ x: right, y: bottom }),
+    parentTransform.toLocal({ x: right, y: top }),
+    parentTransform.toLocal({ x: left, y: top })
+  ];
+  const xs = localPoints.map(point => point.x);
+  const ys = localPoints.map(point => point.y);
+  return {
+    width: Math.max(0.05, Math.max(...xs) - Math.min(...xs)),
+    height: Math.max(0.05, Math.max(...ys) - Math.min(...ys))
+  };
 }
 
 function setLegacyXmlCellNumber(shape: any, name: string, value: number, groupName: string): void {
@@ -2576,7 +2646,7 @@ function transformCellPointPair(cells: any[], transform: PointTransform, xName: 
 }
 
 function createLocalToPageTransform(shape: any, parentTransform?: PointTransform): PointTransform | undefined {
-  const cells = toArray(shape?.Cell);
+  const cells = shapeTransformCells(shape);
   const pinX = readCellNumber(cells, 'PinX');
   const pinY = readCellNumber(cells, 'PinY');
   const locPinX = readLocPin(cells, 'LocPinX', 'Width');
@@ -2600,7 +2670,48 @@ function createLocalToPageTransform(shape: any, parentTransform?: PointTransform
         y: pinY! + localX * sin + localY * cos
       };
       return parentTransform ? parentTransform.toPage(parentPoint) : parentPoint;
+    },
+    toLocal(point: Point): Point {
+      const parentPoint = parentTransform ? parentTransform.toLocal(point) : point;
+      const deltaX = parentPoint.x - pinX!;
+      const deltaY = parentPoint.y - pinY!;
+      const rotatedX = deltaX * cos + deltaY * sin;
+      const rotatedY = -deltaX * sin + deltaY * cos;
+      return {
+        x: locPinX! + (flipX ? -rotatedX : rotatedX),
+        y: locPinY! + (flipY ? -rotatedY : rotatedY)
+      };
     }
+  };
+}
+
+function shapeTransformCells(shape: any): any[] {
+  return mergeCells(
+    toArray(shape?.Cell),
+    collectLegacyXmlCells(shape, legacyXmlCellNames)
+  );
+}
+
+function transformedLocalBounds(
+  width: number,
+  height: number,
+  transform: PointTransform | undefined
+): { width: number; height: number } | undefined {
+  if (!transform) {
+    return undefined;
+  }
+
+  const points = [
+    transform.toPage({ x: 0, y: 0 }),
+    transform.toPage({ x: width, y: 0 }),
+    transform.toPage({ x: width, y: height }),
+    transform.toPage({ x: 0, y: height })
+  ];
+  const xs = points.map(point => point.x);
+  const ys = points.map(point => point.y);
+  return {
+    width: Math.max(...xs) - Math.min(...xs),
+    height: Math.max(...ys) - Math.min(...ys)
   };
 }
 
@@ -2622,6 +2733,13 @@ function createMasterToPageTransform(instanceShape: any, masterShape: any): Poin
         x: point.x * (instanceWidth / masterWidth),
         y: point.y * (instanceHeight / masterHeight)
       });
+    },
+    toLocal(point: Point): Point {
+      const localPoint = instanceTransform.toLocal(point);
+      return {
+        x: localPoint.x * (masterWidth / instanceWidth),
+        y: localPoint.y * (masterHeight / instanceHeight)
+      };
     }
   };
 }

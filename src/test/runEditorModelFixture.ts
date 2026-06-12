@@ -21,6 +21,9 @@ async function main(): Promise<void> {
   await verifiesLegacyXmlStencilFallbackPreview();
   await verifiesRotatedShapeStaysEditableAndPreservesAngle();
   await verifiesShapeResizeWriteBackCentersLocPin();
+  await verifiesGroupedShapeWriteBackUsesLocalCoordinates();
+  await verifiesLegacyXmlGroupedShapeWriteBackUsesLocalCoordinates();
+  await verifiesRotatedGroupedTextWriteBackPreservesLocalSize();
   await verifiesRichTextWriteBackPreservesFormattingMarkers();
   await verifiesConnectorWriteBackSynchronizesGeometry();
   await verifiesConnectorGeometryRows();
@@ -864,6 +867,235 @@ async function verifiesShapeResizeWriteBackCentersLocPin(): Promise<void> {
   assert.ok(Math.abs((rereadShape?.width ?? 0) - 4) < 0.0001, 'expected resized width to persist');
   assert.ok(Math.abs((rereadShape?.height ?? 0) - 2) < 0.0001, 'expected resized height to persist');
   assert.strictEqual(rereadShape?.text, 'Resized');
+}
+
+async function verifiesGroupedShapeWriteBackUsesLocalCoordinates(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Group">
+      <Cell N="PinX" V="4"/>
+      <Cell N="PinY" V="4"/>
+      <Cell N="Width" V="4"/>
+      <Cell N="Height" V="4"/>
+      <Cell N="LocPinX" V="2"/>
+      <Cell N="LocPinY" V="2"/>
+      <Shapes>
+        <Shape ID="2" NameU="InnerBox">
+          <Cell N="PinX" V="1"/>
+          <Cell N="PinY" V="1"/>
+          <Cell N="Width" V="1"/>
+          <Cell N="Height" V="1"/>
+          <Cell N="LocPinX" V="0.5"/>
+          <Cell N="LocPinY" V="0.5"/>
+          <Text>Inner box</Text>
+        </Shape>
+        <Shape ID="3" NameU="Dynamic connector" OneD="1">
+          <Cell N="BeginX" V="0.5"/>
+          <Cell N="BeginY" V="0.5"/>
+          <Cell N="EndX" V="2.5"/>
+          <Cell N="EndY" V="2.5"/>
+        </Shape>
+      </Shapes>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const sourceBytes = await zip.generateAsync({ type: 'nodebuffer' });
+  const diagram = await readVsdxDiagram(sourceBytes, 'group-writeback-fixture.vsdx');
+  const innerBox = diagram.pages[0]?.shapes.find(candidate => candidate.id === '1/2');
+  const innerConnector = diagram.pages[0]?.shapes.find(candidate => candidate.id === '1/3');
+  assert.ok(innerBox, 'expected grouped child shape to be exposed');
+  assert.ok(innerConnector, 'expected grouped child connector to be exposed');
+  assert.strictEqual(innerBox.editable, true);
+  assert.strictEqual(innerConnector.editable, true);
+  assert.ok(Math.abs((innerBox.x ?? 0) - 2.5) < 0.0001, 'expected child shape x to be shown in page coordinates');
+  assert.ok(Math.abs((innerConnector.beginX ?? 0) - 2.5) < 0.0001, 'expected connector begin x to be shown in page coordinates');
+
+  const updatedDiagram = replaceShapeInDiagram(replaceShapeInDiagram(diagram, {
+    pageEntry: diagram.pages[0].entry,
+    shape: {
+      ...innerBox,
+      x: 3.5,
+      y: 3.5,
+      text: 'Moved inner box'
+    }
+  }), {
+    pageEntry: diagram.pages[0].entry,
+    shape: {
+      ...innerConnector,
+      beginX: 3,
+      beginY: 3,
+      endX: 5,
+      endY: 5,
+      text: 'Moved inner connector'
+    }
+  });
+
+  const updatedBytes = await writeVsdxDiagram(sourceBytes, updatedDiagram);
+  const updatedZip = await JSZip.loadAsync(updatedBytes);
+  const pageXml = await updatedZip.file('visio/pages/page1.xml')?.async('text');
+  assert.ok(pageXml, 'expected updated page XML for grouped write-back');
+  assert.ok(pageXml.includes('<Cell N="PinX" V="2"/>'), 'expected grouped child PinX to remain in local coordinates');
+  assert.ok(pageXml.includes('<Cell N="PinY" V="2"/>'), 'expected grouped child PinY to remain in local coordinates');
+  assert.ok(pageXml.includes('<Cell N="BeginX" V="1"/>'), 'expected grouped connector BeginX to remain in local coordinates');
+  assert.ok(pageXml.includes('<Cell N="EndX" V="3"/>'), 'expected grouped connector EndX to remain in local coordinates');
+
+  const reread = await readVsdxDiagram(updatedBytes, 'group-writeback-fixture.vsdx');
+  const rereadBox = reread.pages[0]?.shapes.find(candidate => candidate.id === '1/2');
+  const rereadConnector = reread.pages[0]?.shapes.find(candidate => candidate.id === '1/3');
+  assert.strictEqual(rereadBox?.text, 'Moved inner box');
+  assert.ok(Math.abs((rereadBox?.x ?? 0) - 3.5) < 0.0001, 'expected reread grouped child x to match page edit');
+  assert.ok(Math.abs((rereadBox?.y ?? 0) - 3.5) < 0.0001, 'expected reread grouped child y to match page edit');
+  assert.strictEqual(rereadConnector?.text, 'Moved inner connector');
+  assert.ok(Math.abs((rereadConnector?.beginX ?? 0) - 3) < 0.0001, 'expected reread grouped connector begin x to match page edit');
+  assert.ok(Math.abs((rereadConnector?.endX ?? 0) - 5) < 0.0001, 'expected reread grouped connector end x to match page edit');
+}
+
+async function verifiesLegacyXmlGroupedShapeWriteBackUsesLocalCoordinates(): Promise<void> {
+  const source = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<VisioDocument>
+  <Pages>
+    <Page ID="1" Name="Legacy XML Group">
+      <PageSheet><PageProps><PageWidth>8</PageWidth><PageHeight>6</PageHeight></PageProps></PageSheet>
+      <Shapes>
+        <Shape ID="1" NameU="Group">
+          <XForm>
+            <PinX>4</PinX>
+            <PinY>4</PinY>
+            <Width>4</Width>
+            <Height>4</Height>
+            <LocPinX>2</LocPinX>
+            <LocPinY>2</LocPinY>
+          </XForm>
+          <Shapes>
+            <Shape ID="2" NameU="InnerBox">
+              <XForm>
+                <PinX>1</PinX>
+                <PinY>1</PinY>
+                <Width>1</Width>
+                <Height>1</Height>
+                <LocPinX>0.5</LocPinX>
+                <LocPinY>0.5</LocPinY>
+              </XForm>
+              <Text>Legacy inner box</Text>
+            </Shape>
+            <Shape ID="3" NameU="Dynamic connector" OneD="1">
+              <XForm1D>
+                <BeginX>0.5</BeginX>
+                <BeginY>0.5</BeginY>
+                <EndX>2.5</EndX>
+                <EndY>2.5</EndY>
+              </XForm1D>
+            </Shape>
+          </Shapes>
+        </Shape>
+      </Shapes>
+    </Page>
+  </Pages>
+</VisioDocument>`, 'utf8');
+
+  const diagram = await readVsdxDiagram(source, 'legacy-group-writeback-fixture.vdx');
+  const innerBox = diagram.pages[0]?.shapes.find(candidate => candidate.id === '1/2');
+  const innerConnector = diagram.pages[0]?.shapes.find(candidate => candidate.id === '1/3');
+  assert.ok(innerBox, 'expected legacy XML grouped child shape to be exposed');
+  assert.ok(innerConnector, 'expected legacy XML grouped child connector to be exposed');
+  assert.strictEqual(innerBox.editable, true);
+  assert.strictEqual(innerConnector.editable, true);
+
+  const updatedDiagram = replaceShapeInDiagram(replaceShapeInDiagram(diagram, {
+    pageEntry: diagram.pages[0].entry,
+    shape: {
+      ...innerBox,
+      x: 3.5,
+      y: 3.5,
+      text: 'Moved legacy inner box'
+    }
+  }), {
+    pageEntry: diagram.pages[0].entry,
+    shape: {
+      ...innerConnector,
+      beginX: 3,
+      beginY: 3,
+      endX: 5,
+      endY: 5,
+      text: 'Moved legacy connector'
+    }
+  });
+
+  const updatedBytes = await writeVsdxDiagram(source, updatedDiagram);
+  const updatedXml = updatedBytes.toString('utf8');
+  assert.ok(updatedXml.includes('XForm PinX="2" PinY="2"'), 'expected legacy grouped child coordinates to remain local');
+  assert.ok(updatedXml.includes('XForm1D BeginX="1" BeginY="1" EndX="3" EndY="3"'), 'expected legacy grouped connector endpoints to remain local');
+
+  const reread = await readVsdxDiagram(updatedBytes, 'legacy-group-writeback-fixture.vdx');
+  const rereadBox = reread.pages[0]?.shapes.find(candidate => candidate.id === '1/2');
+  const rereadConnector = reread.pages[0]?.shapes.find(candidate => candidate.id === '1/3');
+  assert.strictEqual(rereadBox?.text, 'Moved legacy inner box');
+  assert.ok(Math.abs((rereadBox?.x ?? 0) - 3.5) < 0.0001, 'expected reread legacy grouped child x to match page edit');
+  assert.ok(Math.abs((rereadBox?.y ?? 0) - 3.5) < 0.0001, 'expected reread legacy grouped child y to match page edit');
+  assert.strictEqual(rereadConnector?.text, 'Moved legacy connector');
+  assert.ok(Math.abs((rereadConnector?.beginX ?? 0) - 3) < 0.0001, 'expected reread legacy grouped connector begin x to match page edit');
+  assert.ok(Math.abs((rereadConnector?.endX ?? 0) - 5) < 0.0001, 'expected reread legacy grouped connector end x to match page edit');
+}
+
+async function verifiesRotatedGroupedTextWriteBackPreservesLocalSize(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="RotatedGroup">
+      <Cell N="PinX" V="4"/>
+      <Cell N="PinY" V="4"/>
+      <Cell N="Width" V="4"/>
+      <Cell N="Height" V="4"/>
+      <Cell N="LocPinX" V="2"/>
+      <Cell N="LocPinY" V="2"/>
+      <Cell N="Angle" V="0.7853981633974483"/>
+      <Shapes>
+        <Shape ID="2" NameU="InnerBox">
+          <Cell N="PinX" V="2"/>
+          <Cell N="PinY" V="2"/>
+          <Cell N="Width" V="2"/>
+          <Cell N="Height" V="1"/>
+          <Cell N="LocPinX" V="1"/>
+          <Cell N="LocPinY" V="0.5"/>
+          <Text>Rotated inner</Text>
+        </Shape>
+      </Shapes>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const sourceBytes = await zip.generateAsync({ type: 'nodebuffer' });
+  const diagram = await readVsdxDiagram(sourceBytes, 'rotated-group-writeback-fixture.vsdx');
+  const innerBox = diagram.pages[0]?.shapes.find(candidate => candidate.id === '1/2');
+  assert.ok(innerBox, 'expected rotated grouped child shape to be exposed');
+  assert.strictEqual(innerBox.editable, true);
+  assert.ok((innerBox.width ?? 0) > 2, 'expected rotated child width to be exposed as page-space bbox');
+
+  const updatedDiagram = replaceShapeInDiagram(diagram, {
+    pageEntry: diagram.pages[0].entry,
+    shape: {
+      ...innerBox,
+      text: 'Renamed only'
+    }
+  });
+  const updatedBytes = await writeVsdxDiagram(sourceBytes, updatedDiagram);
+  const updatedZip = await JSZip.loadAsync(updatedBytes);
+  const pageXml = await updatedZip.file('visio/pages/page1.xml')?.async('text');
+  assert.ok(pageXml, 'expected updated rotated group page XML');
+  assert.ok(pageXml.includes('<Cell N="Width" V="2"/>'), 'expected local child width to survive text-only save');
+  assert.ok(pageXml.includes('<Cell N="Height" V="1"/>'), 'expected local child height to survive text-only save');
+
+  const reread = await readVsdxDiagram(updatedBytes, 'rotated-group-writeback-fixture.vsdx');
+  const rereadBox = reread.pages[0]?.shapes.find(candidate => candidate.id === '1/2');
+  assert.strictEqual(rereadBox?.text, 'Renamed only');
+  assert.ok(Math.abs((rereadBox?.width ?? 0) - (innerBox.width ?? 0)) < 0.0001, 'expected page-space width to remain stable after text edit');
+  assert.ok(Math.abs((rereadBox?.height ?? 0) - (innerBox.height ?? 0)) < 0.0001, 'expected page-space height to remain stable after text edit');
 }
 
 async function verifiesMasterFallbackWhenPageGeometryIsIncomplete(): Promise<void> {

@@ -2,6 +2,18 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.16 - 2026-06-12
+
+### Fixed
+
+- Fixed grouped shape write-back so editable child shapes and grouped connectors are saved back in their original local Visio coordinates instead of writing page-space coordinates into the group.
+- Fixed the same grouped-coordinate write-back path for Visio XML (`.vdx`, `.vsx`, `.vtx`) files.
+- Preserved local child shape size when editing text inside rotated groups, preventing text-only saves from rewriting local width and height with page-space bounding-box dimensions.
+
+### Added
+
+- Added regression coverage for modern package grouped shape dragging, grouped connector endpoint dragging, legacy XML grouped write-back, and rotated-group text edits.
+
 ## 0.1.15 - 2026-06-12
 
 ### Added
