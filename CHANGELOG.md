@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.46 - 2026-06-12
+
+### Added
+
+- Added Visio paragraph before/after spacing metadata (`SpBefore`, `SpAfter`) so multi-line labels can preserve paragraph spacing in SVG preview.
+- Preserves paragraph spacing inheritance through direct shape cells, Paragraph sections, TextStyle StyleSheets, master-shape inheritance, formula cells, and legacy Visio XML files.
+- Added regression coverage for modern package direct/Paragraph/StyleSheet paragraph spacing and legacy XML direct/TextStyle paragraph spacing.
+
 ## 0.1.45 - 2026-06-12
 
 ### Added

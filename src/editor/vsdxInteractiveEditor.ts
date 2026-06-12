@@ -1033,15 +1033,16 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         text.setAttribute('font-size', String(fontSize));
         const lines = String(shape.text).replace(/\\r/g, '').split('\\n').filter(line => line.length > 0);
         const lineHeight = textLineHeight(shape, fontSize, contentBox, lines.length);
-        const textPosition = resolveTextPosition(shape, contentBox, lines.length, lineHeight);
+        const paragraphSpacing = textParagraphSpacing(shape);
+        const textPosition = resolveTextPosition(shape, contentBox, lines.length, lineHeight, paragraphSpacing);
         text.setAttribute('x', String(textPosition.x));
-        text.setAttribute('y', String(textPosition.y));
+        text.setAttribute('y', String(round4(textPosition.y + paragraphSpacing.before)));
         text.setAttribute('text-anchor', textPosition.anchor);
         text.setAttribute('dominant-baseline', textPosition.baseline);
         lines.slice(0, 5).forEach((line, index) => {
           const tspan = document.createElementNS(svgNS, 'tspan');
           tspan.setAttribute('x', String(textLineX(shape, textPosition, index)));
-          tspan.setAttribute('dy', index === 0 ? '0' : String(lineHeight));
+          tspan.setAttribute('dy', index === 0 ? '0' : String(round4(lineHeight + paragraphSpacing.after)));
           tspan.textContent = line;
           text.append(tspan);
         });
@@ -1329,13 +1330,22 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       return clamp(requested, minimum, maximum);
     }
 
-    function resolveTextPosition(shape, textBox, lineCount, lineHeight) {
+    function textParagraphSpacing(shape) {
+      const spacing = (shape.textStyle && shape.textStyle.paragraphSpacing) || {};
+      return {
+        before: Math.max(0, numberOr(spacing.before, 0)),
+        after: Math.max(0, numberOr(spacing.after, 0))
+      };
+    }
+
+    function resolveTextPosition(shape, textBox, lineCount, lineHeight, paragraphSpacing) {
       const style = shape.textStyle || {};
       const horizontal = style.horizontalAlign || 'center';
       const vertical = style.verticalAlign || 'middle';
       const padding = Math.min(0.08, Math.max(0.02, textBox.width * 0.04));
       const visibleLines = Math.max(1, Math.min(5, lineCount));
-      const lineSpan = (visibleLines - 1) * lineHeight;
+      const spacing = paragraphSpacing || { before: 0, after: 0 };
+      const lineSpan = Math.max(0, (visibleLines - 1) * (lineHeight + spacing.after)) + spacing.before;
       let x = textBox.x + textBox.width / 2;
       let anchor = 'middle';
       if (horizontal === 'left') {

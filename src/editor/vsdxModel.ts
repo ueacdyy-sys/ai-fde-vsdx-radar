@@ -115,10 +115,16 @@ export interface VsdxEditorTextStyle {
   verticalAlign?: 'top' | 'middle' | 'bottom';
   textPosAfterBullet?: number;
   lineSpacing?: number;
+  paragraphSpacing?: VsdxEditorParagraphSpacing;
   indents?: VsdxEditorTextIndents;
   margins?: VsdxEditorTextMargins;
   background?: string;
   backgroundOpacity?: number;
+}
+
+export interface VsdxEditorParagraphSpacing {
+  before?: number;
+  after?: number;
 }
 
 export interface VsdxEditorTextIndents {
@@ -267,6 +273,8 @@ const legacyXmlCellNames = new Set([
   'IndFirst',
   'IndLeft',
   'IndRight',
+  'SpAfter',
+  'SpBefore',
   'SpLine',
   'VerticalAlign',
   'LeftMargin',
@@ -358,6 +366,8 @@ const textStyleCellNames = new Set([
   'IndFirst',
   'IndLeft',
   'IndRight',
+  'SpAfter',
+  'SpBefore',
   'SpLine',
   'VerticalAlign',
   'LeftMargin',
@@ -1744,6 +1754,7 @@ function readTextStyle(
     ?? readTextPositionCell(cells, 'TextPosAfterBullet', refs);
   const lineSpacing = readLineSpacingCell(paragraphCells, refs)
     ?? readLineSpacingCell(cells, refs);
+  const paragraphSpacing = readParagraphSpacing(paragraphCells, cells, refs);
   const indents = readParagraphIndents(paragraphCells, cells, refs);
   const margins = readTextMargins(cells, refs);
   const background = readColorCell(cells, 'TextBkgnd');
@@ -1786,6 +1797,9 @@ function readTextStyle(
   }
   if (lineSpacing !== undefined) {
     style.lineSpacing = lineSpacing;
+  }
+  if (paragraphSpacing) {
+    style.paragraphSpacing = paragraphSpacing;
   }
   if (indents) {
     style.indents = indents;
@@ -1887,6 +1901,34 @@ function readLineSpacingCell(cells: unknown[], refs?: Map<string, number>): numb
     return undefined;
   }
   return value;
+}
+
+function readParagraphSpacing(
+  paragraphCells: unknown[],
+  fallbackCells: unknown[],
+  refs?: Map<string, number>
+): VsdxEditorParagraphSpacing | undefined {
+  const spacing: VsdxEditorParagraphSpacing = {};
+  const before = readParagraphSpacingCell(paragraphCells, 'SpBefore', refs)
+    ?? readParagraphSpacingCell(fallbackCells, 'SpBefore', refs);
+  const after = readParagraphSpacingCell(paragraphCells, 'SpAfter', refs)
+    ?? readParagraphSpacingCell(fallbackCells, 'SpAfter', refs);
+  if (before !== undefined) {
+    spacing.before = before;
+  }
+  if (after !== undefined) {
+    spacing.after = after;
+  }
+  return Object.keys(spacing).length > 0 ? spacing : undefined;
+}
+
+function readParagraphSpacingCell(cells: unknown[], name: string, refs?: Map<string, number>): number | undefined {
+  const cell = cells.find((candidate: any) => candidate?.N === name) as any;
+  const value = readCellNumber(cells, name, refs) ?? readUnitNumber(cell?.V) ?? readUnitNumber(cell?.F);
+  if (value === undefined || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return Math.max(0, value);
 }
 
 function readParagraphIndents(
