@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.42 - 2026-06-12
+
+### Added
+
+- Added Visio `DblUnderline` / `DoubleUnderline` text metadata so double-underlined labels render with SVG double underline decoration.
+- Preserves double underline through direct shape cells, Character sections, TextStyle StyleSheets, master-shape inheritance, formula cells, and legacy Visio XML files.
+- Added regression coverage for modern package direct/Character/StyleSheet double underline and legacy XML direct/TextStyle double underline.
+
 ## 0.1.41 - 2026-06-12
 
 ### Added

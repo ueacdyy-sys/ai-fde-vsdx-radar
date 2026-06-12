@@ -1368,6 +1368,9 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       }
       if (decorations.length > 0) {
         text.setAttribute('text-decoration', decorations.join(' '));
+        if (style.doubleUnderline) {
+          text.setAttribute('text-decoration-style', 'double');
+        }
       }
     }
 

@@ -721,6 +721,7 @@ async function verifiesTextStyleCells(): Promise<void> {
       <Cell N="Font" V="3"/>
       <Cell N="Size" V="18" U="PT"/>
       <Cell N="Style" V="5"/>
+      <Cell N="DblUnderline" V="1"/>
       <Cell N="Strikethru" V="1"/>
       <Cell N="VerticalAlign" V="0"/>
       <Cell N="LeftMargin" V="0.11"/>
@@ -738,7 +739,7 @@ async function verifiesTextStyleCells(): Promise<void> {
       <Cell N="Width" V="2"/>
       <Cell N="Height" V="1"/>
       <Section N="Character" IX="0">
-        <Row IX="0"><Cell N="Color" F="RGB(17,34,51)"/><Cell N="Font" V="7"/><Cell N="Size" V="0.25" U="IN"/><Cell N="Style" F="GUARD(2)"/><Cell N="DoubleStrikethrough" F="GUARD(1)"/></Row>
+        <Row IX="0"><Cell N="Color" F="RGB(17,34,51)"/><Cell N="Font" V="7"/><Cell N="Size" V="0.25" U="IN"/><Cell N="Style" F="GUARD(2)"/><Cell N="DoubleUnderline" F="GUARD(1)"/><Cell N="DoubleStrikethrough" F="GUARD(1)"/></Row>
       </Section>
       <Section N="Paragraph" IX="0">
         <Row IX="0"><Cell N="HAlign" V="2"/><Cell N="TextPosAfterBullet" F="GUARD(0.21)"/></Row>
@@ -757,6 +758,7 @@ async function verifiesTextStyleCells(): Promise<void> {
   assert.strictEqual(direct?.textStyle?.bold, true, 'expected direct text bold style');
   assert.strictEqual(direct?.textStyle?.italic, false, 'expected direct text italic style');
   assert.strictEqual(direct?.textStyle?.underline, true, 'expected direct text underline style');
+  assert.strictEqual(direct?.textStyle?.doubleUnderline, true, 'expected direct text double underline style');
   assert.strictEqual(direct?.textStyle?.strikethrough, true, 'expected direct text strikethrough style');
   assert.strictEqual(direct?.textStyle?.verticalAlign, 'top', 'expected direct text vertical alignment');
   assert.ok(Math.abs((direct?.textStyle?.margins?.left ?? 0) - 0.11) < 0.0001, 'expected direct left text margin');
@@ -771,7 +773,8 @@ async function verifiesTextStyleCells(): Promise<void> {
   assert.ok(Math.abs((character?.textStyle?.fontSize ?? 0) - 0.25) < 0.0001, 'expected character row text size to be parsed');
   assert.strictEqual(character?.textStyle?.bold, false, 'expected character row bold style');
   assert.strictEqual(character?.textStyle?.italic, true, 'expected character row italic style');
-  assert.strictEqual(character?.textStyle?.underline, false, 'expected character row underline style');
+  assert.strictEqual(character?.textStyle?.underline, true, 'expected double underline to imply underline style');
+  assert.strictEqual(character?.textStyle?.doubleUnderline, true, 'expected character row double underline style');
   assert.strictEqual(character?.textStyle?.strikethrough, true, 'expected character row double strikethrough style');
   assert.strictEqual(character?.textStyle?.horizontalAlign, 'right', 'expected paragraph row horizontal alignment');
   assert.ok(Math.abs((character?.textStyle?.textPosAfterBullet ?? 0) - 0.21) < 0.0001, 'expected paragraph row text position after bullet');
@@ -803,7 +806,7 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
       <Cell N="LeftMargin" V="0.09"/>
       <Cell N="RightMargin" V="0.08"/>
       <Cell N="TextPosAfterBullet" V="0.18"/>
-      <Section N="Character" IX="0"><Row IX="0"><Cell N="Font" V="11"/><Cell N="Style" V="3"/><Cell N="Strikethru" V="1"/></Row></Section>
+      <Section N="Character" IX="0"><Row IX="0"><Cell N="Font" V="11"/><Cell N="Style" V="3"/><Cell N="DblUnderline" V="1"/><Cell N="Strikethru" V="1"/></Row></Section>
       <Section N="Paragraph" IX="0"><Row IX="0"><Cell N="HAlign" V="0"/></Row></Section>
     </StyleSheet>
     <StyleSheet ID="7" NameU="Flow Normal" LineStyle="3" FillStyle="3" TextStyle="3">
@@ -898,7 +901,8 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
   assert.strictEqual(direct?.textStyle?.bold, true, 'expected page shape bold text style to inherit from TextStyle');
   assert.strictEqual(direct?.textStyle?.fontFamily, 'Aptos', 'expected page shape font family to inherit from TextStyle');
   assert.strictEqual(direct?.textStyle?.italic, true, 'expected page shape italic text style to inherit from TextStyle');
-  assert.strictEqual(direct?.textStyle?.underline, false, 'expected page shape underline text style to inherit from TextStyle');
+  assert.strictEqual(direct?.textStyle?.underline, true, 'expected page shape double underline to imply underline through TextStyle');
+  assert.strictEqual(direct?.textStyle?.doubleUnderline, true, 'expected page shape double underline text style to inherit from TextStyle');
   assert.strictEqual(direct?.textStyle?.strikethrough, true, 'expected page shape strikethrough text style to inherit from TextStyle');
   assert.strictEqual(direct?.textStyle?.horizontalAlign, 'left', 'expected page shape horizontal text alignment to inherit from TextStyle');
   assert.strictEqual(direct?.textStyle?.verticalAlign, 'bottom', 'expected page shape vertical text alignment to inherit from TextStyle');
@@ -921,6 +925,7 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
   assert.strictEqual(inheritedFromMaster?.shadow?.color, '#222222', 'expected master style shadow to reach page instance');
   assert.ok(Math.abs((inheritedFromMaster?.shadow?.blur ?? 0) - 0.11) < 0.0001, 'expected master style shadow blur to reach page instance');
   assert.strictEqual(inheritedFromMaster?.textStyle?.fontFamily, 'Aptos', 'expected master style font family to reach page instance');
+  assert.strictEqual(inheritedFromMaster?.textStyle?.doubleUnderline, true, 'expected master style double underline to reach page instance');
   assert.strictEqual(inheritedFromMaster?.textStyle?.strikethrough, true, 'expected master style strikethrough to reach page instance');
   assert.ok(Math.abs((inheritedFromMaster?.textStyle?.textPosAfterBullet ?? 0) - 0.18) < 0.0001, 'expected master style text position after bullet to reach page instance');
   assert.strictEqual(inheritedFromMaster?.width, 2, 'expected master width to remain available through effective cells');
@@ -1281,6 +1286,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
             <Font>4</Font>
             <Size U="PT">14</Size>
             <Style>7</Style>
+            <DblUnderline>1</DblUnderline>
             <Strikethru>1</Strikethru>
           </Char>
           <Text>Legacy text</Text>
@@ -1337,6 +1343,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.strictEqual(shape.textStyle?.bold, true, 'expected legacy XML text bold metadata');
   assert.strictEqual(shape.textStyle?.italic, true, 'expected legacy XML text italic metadata');
   assert.strictEqual(shape.textStyle?.underline, true, 'expected legacy XML text underline metadata');
+  assert.strictEqual(shape.textStyle?.doubleUnderline, true, 'expected legacy XML text double underline metadata');
   assert.strictEqual(shape.textStyle?.strikethrough, true, 'expected legacy XML text strikethrough metadata');
   assert.strictEqual(shape.textStyle?.horizontalAlign, 'right', 'expected legacy XML text horizontal alignment metadata');
   assert.strictEqual(shape.textStyle?.verticalAlign, 'bottom', 'expected legacy XML text vertical alignment metadata');
@@ -1479,7 +1486,7 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
       <Cell N="TopMargin" V="0.07"/>
       <Cell N="BottomMargin" V="0.08"/>
       <Cell N="TextPosAfterBullet" V="0.14"/>
-      <Section N="Character" IX="0"><Row IX="0"><Cell N="Color" V="#123456"/><Cell N="Font" V="8"/><Cell N="Size" V="16" U="PT"/><Cell N="Style" V="4"/><Cell N="Strikethru" V="1"/></Row></Section>
+      <Section N="Character" IX="0"><Row IX="0"><Cell N="Color" V="#123456"/><Cell N="Font" V="8"/><Cell N="Size" V="16" U="PT"/><Cell N="Style" V="4"/><Cell N="DblUnderline" V="1"/><Cell N="Strikethru" V="1"/></Row></Section>
       <Section N="Paragraph" IX="0"><Row IX="0"><Cell N="HAlign" V="1"/></Row></Section>
     </StyleSheet>
   </StyleSheets>
@@ -1544,6 +1551,7 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
   assert.strictEqual(shape?.textStyle?.bold, false, 'expected legacy XML TextStyle bold to be applied');
   assert.strictEqual(shape?.textStyle?.italic, false, 'expected legacy XML TextStyle italic to be applied');
   assert.strictEqual(shape?.textStyle?.underline, true, 'expected legacy XML TextStyle underline to be applied');
+  assert.strictEqual(shape?.textStyle?.doubleUnderline, true, 'expected legacy XML TextStyle double underline to be applied');
   assert.strictEqual(shape?.textStyle?.strikethrough, true, 'expected legacy XML TextStyle strikethrough to be applied');
   assert.strictEqual(shape?.textStyle?.horizontalAlign, 'center', 'expected legacy XML TextStyle horizontal alignment to be applied');
   assert.strictEqual(shape?.textStyle?.verticalAlign, 'top', 'expected legacy XML TextStyle vertical alignment to be applied');

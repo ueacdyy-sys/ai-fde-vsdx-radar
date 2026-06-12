@@ -108,6 +108,7 @@ export interface VsdxEditorTextStyle {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  doubleUnderline?: boolean;
   strikethrough?: boolean;
   horizontalAlign?: 'left' | 'center' | 'right';
   verticalAlign?: 'top' | 'middle' | 'bottom';
@@ -247,6 +248,8 @@ const legacyXmlCellNames = new Set([
   'Font',
   'Size',
   'Style',
+  'DblUnderline',
+  'DoubleUnderline',
   'Strikethru',
   'DoubleStrikethrough',
   'HAlign',
@@ -331,6 +334,8 @@ const textStyleCellNames = new Set([
   'Font',
   'Size',
   'Style',
+  'DblUnderline',
+  'DoubleUnderline',
   'Strikethru',
   'DoubleStrikethrough',
   'HAlign',
@@ -1703,6 +1708,10 @@ function readTextStyle(
     ?? readFontSizeCell(cells, refs);
   const fontStyle = readCharacterStyleCell(characterCells, refs)
     ?? readCharacterStyleCell(cells, refs);
+  const doubleUnderline = readTextBooleanCell(characterCells, 'DblUnderline', refs)
+    ?? readTextBooleanCell(characterCells, 'DoubleUnderline', refs)
+    ?? readTextBooleanCell(cells, 'DblUnderline', refs)
+    ?? readTextBooleanCell(cells, 'DoubleUnderline', refs);
   const strikethrough = readTextBooleanCell(characterCells, 'Strikethru', refs)
     ?? readTextBooleanCell(characterCells, 'DoubleStrikethrough', refs)
     ?? readTextBooleanCell(cells, 'Strikethru', refs)
@@ -1729,6 +1738,12 @@ function readTextStyle(
     style.bold = (fontStyle & 1) !== 0;
     style.italic = (fontStyle & 2) !== 0;
     style.underline = (fontStyle & 4) !== 0;
+  }
+  if (doubleUnderline !== undefined) {
+    style.doubleUnderline = doubleUnderline;
+    if (doubleUnderline) {
+      style.underline = true;
+    }
   }
   if (strikethrough !== undefined) {
     style.strikethrough = strikethrough;
