@@ -2,6 +2,17 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.11 - 2026-06-12
+
+### Added
+
+- Added a direct resize handle for editable, non-rotated shapes in the interactive editor.
+- Added regression coverage for shape resize write-back and Visio XML resize write-back.
+
+### Changed
+
+- Shape resize write-back now synchronizes `LocPinX` and `LocPinY` to the resized shape center for both modern Visio packages and Visio XML files, preventing stale location-pin formulas from pulling edited shapes out of position when reopened in Visio.
+
 ## 0.1.10 - 2026-06-12
 
 ### Added

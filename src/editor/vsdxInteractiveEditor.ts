@@ -431,6 +431,9 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       cursor: pointer;
       vector-effect: non-scaling-stroke;
     }
+    .shape-resize-handle {
+      cursor: nesw-resize;
+    }
     .shape-label {
       fill: #111827;
       pointer-events: none;
@@ -756,6 +759,11 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       if (drag.mode === 'shape') {
         shape.x = round4(drag.original.x + dx);
         shape.y = round4(drag.original.y + dy);
+      } else if (drag.mode === 'resize-shape') {
+        const anchorX = numberOr(drag.original.x, 0);
+        const anchorY = numberOr(drag.original.y, 0);
+        shape.width = round4(clamp(point.x - anchorX, 0.05, page.width - anchorX));
+        shape.height = round4(clamp(point.y - anchorY, 0.05, page.height - anchorY));
       } else if (drag.mode === 'connector') {
         shape.beginX = round4(drag.original.beginX + dx);
         shape.beginY = round4(drag.original.beginY + dy);
@@ -919,6 +927,22 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
           text.append(tspan);
         });
         group.append(text);
+      }
+
+      if (shape.editable && Math.abs(angle) < 0.0001) {
+        const handle = document.createElementNS(svgNS, 'rect');
+        handle.classList.add('handle', 'shape-resize-handle');
+        handle.setAttribute('x', String(x + width - 0.06));
+        handle.setAttribute('y', String(y - 0.06));
+        handle.setAttribute('width', '0.12');
+        handle.setAttribute('height', '0.12');
+        handle.setAttribute('rx', '0.02');
+        handle.addEventListener('pointerdown', event => {
+          event.stopPropagation();
+          selectShape(shape.id);
+          startDrag(event, shape, 'resize-shape');
+        });
+        group.append(handle);
       }
 
       group.addEventListener('pointerdown', event => {

@@ -878,6 +878,8 @@ function applyShapeUpdate(shape: any, update: VsdxEditorShape): void {
   setCellNumber(cells, 'PinY', pinY);
   setCellNumber(cells, 'Width', width);
   setCellNumber(cells, 'Height', height);
+  setCellNumber(cells, 'LocPinX', width / 2);
+  setCellNumber(cells, 'LocPinY', height / 2);
   writeShapeText(shape, update.text);
 }
 
@@ -908,6 +910,8 @@ function applyLegacyXmlShapeUpdate(shape: any, update: VsdxEditorShape): void {
   setLegacyXmlCellNumber(shape, 'PinY', pinY, 'XForm');
   setLegacyXmlCellNumber(shape, 'Width', width, 'XForm');
   setLegacyXmlCellNumber(shape, 'Height', height, 'XForm');
+  setLegacyXmlCellNumber(shape, 'LocPinX', width / 2, 'XForm');
+  setLegacyXmlCellNumber(shape, 'LocPinY', height / 2, 'XForm');
   writeShapeText(shape, update.text);
 }
 

@@ -16,6 +16,7 @@ async function main(): Promise<void> {
   await verifiesLegacyXmlDrawingPreviewAndWriteBack();
   await verifiesLegacyXmlStencilFallbackPreview();
   await verifiesRotatedShapeStaysEditableAndPreservesAngle();
+  await verifiesShapeResizeWriteBackCentersLocPin();
   await verifiesRichTextWriteBackPreservesFormattingMarkers();
   await verifiesConnectorWriteBackSynchronizesGeometry();
   await verifiesConnectorGeometryRows();
@@ -535,6 +536,8 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
       ...shape,
       x: 2.5,
       y: 2.5,
+      width: 3,
+      height: 1.5,
       text: 'Updated legacy XML'
     }
   }), {
@@ -554,6 +557,8 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.strictEqual(rereadShape?.text, 'Updated legacy XML');
   assert.ok(Math.abs((rereadShape?.x ?? 0) - 2.5) < 0.0001, 'expected legacy XML shape x to write back');
   assert.ok(Math.abs((rereadShape?.y ?? 0) - 2.5) < 0.0001, 'expected legacy XML shape y to write back');
+  assert.ok(Math.abs((rereadShape?.width ?? 0) - 3) < 0.0001, 'expected legacy XML shape width to write back');
+  assert.ok(Math.abs((rereadShape?.height ?? 0) - 1.5) < 0.0001, 'expected legacy XML shape height to write back');
   assert.strictEqual(rereadConnector?.text, 'Moved connector');
   assert.ok(Math.abs((rereadConnector?.endX ?? 0) - 6) < 0.0001, 'expected legacy XML connector endpoint to write back');
 }
@@ -634,6 +639,54 @@ async function verifiesRotatedShapeStaysEditableAndPreservesAngle(): Promise<voi
   assert.ok(Math.abs((rereadShape?.angle ?? 0) - 0.7853981633974483) < 0.0000001, 'expected angle to be preserved');
   assert.ok(Math.abs((rereadShape?.x ?? 0) - 3) < 0.0001, 'expected rotated shape x to write back');
   assert.ok(Math.abs((rereadShape?.y ?? 0) - 3) < 0.0001, 'expected rotated shape y to write back');
+}
+
+async function verifiesShapeResizeWriteBackCentersLocPin(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Resizable">
+      <Cell N="PinX" V="2"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="LocPinX" V="0.2" F="GUARD(0.2)"/>
+      <Cell N="LocPinY" V="0.3" F="GUARD(0.3)"/>
+      <Text>Resizable</Text>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const sourceBytes = await zip.generateAsync({ type: 'nodebuffer' });
+  const diagram = await readVsdxDiagram(sourceBytes, 'resize-writeback-fixture.vsdx');
+  const shape = diagram.pages[0]?.shapes[0];
+  assert.ok(shape, 'expected shape to be parsed for resize write-back');
+  assert.strictEqual(shape.editable, true);
+
+  const updatedDiagram = replaceShapeInDiagram(diagram, {
+    pageEntry: diagram.pages[0].entry,
+    shape: {
+      ...shape,
+      width: 4,
+      height: 2,
+      text: 'Resized'
+    }
+  });
+  const updatedBytes = await writeVsdxDiagram(sourceBytes, updatedDiagram);
+  const updatedZip = await JSZip.loadAsync(updatedBytes);
+  const pageXml = await updatedZip.file('visio/pages/page1.xml')?.async('text');
+  assert.ok(pageXml, 'expected updated page XML for resize write-back');
+  assert.ok(pageXml.includes('N="LocPinX" V="2"'), 'expected LocPinX to be centered after resize');
+  assert.ok(pageXml.includes('N="LocPinY" V="1"'), 'expected LocPinY to be centered after resize');
+  assert.ok(!pageXml.includes('GUARD('), 'expected stale LocPin formulas to be removed');
+
+  const reread = await readVsdxDiagram(updatedBytes, 'resize-writeback-fixture.vsdx');
+  const rereadShape = reread.pages[0]?.shapes[0];
+  assert.ok(Math.abs((rereadShape?.width ?? 0) - 4) < 0.0001, 'expected resized width to persist');
+  assert.ok(Math.abs((rereadShape?.height ?? 0) - 2) < 0.0001, 'expected resized height to persist');
+  assert.strictEqual(rereadShape?.text, 'Resized');
 }
 
 async function verifiesMasterFallbackWhenPageGeometryIsIncomplete(): Promise<void> {

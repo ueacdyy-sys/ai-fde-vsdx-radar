@@ -11,7 +11,7 @@ Visio Preview & QA Linter brings modern Microsoft Visio package review into VS C
 ## What It Does
 
 - Opens modern Visio package files (`.vsdx`, `.vsdm`, `.vssx`, `.vssm`, `.vstx`, `.vstm`) and Visio XML files (`.vdx`, `.vsx`, `.vtx`) with an interactive custom editor in VS Code.
-- Supports zoom, page switching, shape dragging, connector endpoint dragging, and lightweight text edits for supported shapes.
+- Supports zoom, page switching, shape dragging, direct shape resizing, connector endpoint dragging, and lightweight text edits for supported shapes.
 - Keeps simple rotated shapes editable: they render with their stored angle, can be dragged or text-edited, and preserve `Angle` on save.
 - Exports Visio files to cached PNG or PDF previews through local Microsoft Visio automation.
 - Supports multi-page diagrams with one preview per page.
