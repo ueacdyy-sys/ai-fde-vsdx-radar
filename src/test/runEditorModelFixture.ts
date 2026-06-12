@@ -11,6 +11,7 @@ async function main(): Promise<void> {
   await verifiesAdvancedGeometryRows();
   await verifiesFormulaGeometryAndMasterRowInheritance();
   await verifiesFormulaOnlyShapeTransformCells();
+  await verifiesTextBoxTransformCells();
   await verifiesColorFormulaAndNoPaint();
   await verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle();
   await verifiesMasterChildShapeExpansion();
@@ -300,6 +301,41 @@ async function verifiesFormulaOnlyShapeTransformCells(): Promise<void> {
   assert.ok(pageXml.includes('<Cell N="PinY" V="2.75"/>'), 'expected edited formula-only PinY to be numeric');
   assert.ok(pageXml.includes('<Cell N="Width" V="3"/>'), 'expected edited formula-only Width to be numeric');
   assert.ok(pageXml.includes('<Cell N="Height" V="1.5"/>'), 'expected edited formula-only Height to be numeric');
+}
+
+async function verifiesTextBoxTransformCells(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="OffsetText">
+      <Cell N="PinX" V="3"/>
+      <Cell N="PinY" V="3"/>
+      <Cell N="Width" V="4"/>
+      <Cell N="Height" V="2"/>
+      <Cell N="TxtPinX" F="Width*0.75"/>
+      <Cell N="TxtPinY" F="Height*0.25"/>
+      <Cell N="TxtWidth" F="Width*0.5"/>
+      <Cell N="TxtHeight" F="Height*0.5"/>
+      <Cell N="TxtLocPinX" F="TxtWidth*0.5"/>
+      <Cell N="TxtLocPinY" F="TxtHeight*0.5"/>
+      <Cell N="TxtAngle" F="GUARD(0.2)"/>
+      <Text>Offset text</Text>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'textbox-transform-fixture.vsdx');
+  const shape = diagram.pages[0]?.shapes[0];
+  assert.ok(shape, 'expected text box shape to be parsed');
+  assert.strictEqual(shape.text, 'Offset text');
+  assert.ok(shape.textBox, 'expected text box metadata to be exposed');
+  assert.ok(Math.abs((shape.textBox?.x ?? 0) - 2) < 0.0001, 'expected text box local x');
+  assert.ok(Math.abs((shape.textBox?.y ?? 0) - 0) < 0.0001, 'expected text box local y');
+  assert.ok(Math.abs((shape.textBox?.width ?? 0) - 2) < 0.0001, 'expected text box width');
+  assert.ok(Math.abs((shape.textBox?.height ?? 0) - 1) < 0.0001, 'expected text box height');
+  assert.ok(Math.abs((shape.textBox?.angle ?? 0) - 0.2) < 0.0001, 'expected text box angle');
 }
 
 async function verifiesColorFormulaAndNoPaint(): Promise<void> {
@@ -761,6 +797,14 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
             <LocPinX>1</LocPinX>
             <LocPinY>0.5</LocPinY>
           </XForm>
+          <TextXForm>
+            <TxtPinX>1.5</TxtPinX>
+            <TxtPinY>0.25</TxtPinY>
+            <TxtWidth>1</TxtWidth>
+            <TxtHeight>0.5</TxtHeight>
+            <TxtLocPinX>0.5</TxtLocPinX>
+            <TxtLocPinY>0.25</TxtLocPinY>
+          </TextXForm>
           <Text>Legacy text</Text>
           <Geom IX="0">
             <MoveTo IX="1"><X>0</X><Y>0</Y></MoveTo>
@@ -790,6 +834,9 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.ok(shape, 'expected legacy XML shape');
   assert.strictEqual(shape.editable, true);
   assert.strictEqual(shape.text, 'Legacy text');
+  assert.ok(shape.textBox, 'expected legacy XML text box metadata');
+  assert.ok(Math.abs((shape.textBox?.x ?? 0) - 1) < 0.0001, 'expected legacy XML text box x');
+  assert.ok(Math.abs((shape.textBox?.width ?? 0) - 1) < 0.0001, 'expected legacy XML text box width');
   assert.ok(shape.geometryPath?.startsWith('M 0 1 L 2 1'), 'expected legacy XML geometry to render');
 
   const connector = diagram.pages[0]?.shapes.find(candidate => candidate.id === '11');

@@ -962,15 +962,20 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       if (shape.text) {
         const text = document.createElementNS(svgNS, 'text');
         text.classList.add('shape-label');
-        text.setAttribute('x', String(x + width / 2));
-        text.setAttribute('y', String(y + height / 2));
-        text.setAttribute('font-size', String(Math.min(0.16, Math.max(0.08, height / 3.2))));
+        const textBox = resolveTextBox(page, shape, x, y, width, height);
+        text.setAttribute('x', String(textBox.x + textBox.width / 2));
+        text.setAttribute('y', String(textBox.y + textBox.height / 2));
+        if (Math.abs(textBox.angle) > 0.0001) {
+          const degrees = -textBox.angle * 180 / Math.PI;
+          text.setAttribute('transform', 'rotate(' + degrees + ' ' + (textBox.x + textBox.width / 2) + ' ' + (textBox.y + textBox.height / 2) + ')');
+        }
+        text.setAttribute('font-size', String(Math.min(0.16, Math.max(0.08, textBox.height / 3.2))));
         const lines = String(shape.text).replace(/\\r/g, '').split('\\n').filter(line => line.length > 0);
-        const lineHeight = Math.min(0.18, Math.max(0.09, height / Math.max(2, lines.length + 1)));
+        const lineHeight = Math.min(0.18, Math.max(0.09, textBox.height / Math.max(2, lines.length + 1)));
         const startOffset = -((lines.length - 1) * lineHeight) / 2;
         lines.slice(0, 5).forEach((line, index) => {
           const tspan = document.createElementNS(svgNS, 'tspan');
-          tspan.setAttribute('x', String(x + width / 2));
+          tspan.setAttribute('x', String(textBox.x + textBox.width / 2));
           tspan.setAttribute('dy', index === 0 ? String(startOffset) : String(lineHeight));
           tspan.textContent = line;
           text.append(tspan);
@@ -1005,6 +1010,21 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         editText(shape);
       });
       return group;
+    }
+
+    function resolveTextBox(page, shape, shapeX, shapeY, shapeWidth, shapeHeight) {
+      const box = shape.textBox || {};
+      const width = Math.max(0.05, numberOr(box.width, shapeWidth));
+      const height = Math.max(0.05, numberOr(box.height, shapeHeight));
+      const localX = numberOr(box.x, 0);
+      const localY = numberOr(box.y, 0);
+      return {
+        x: shapeX + localX,
+        y: shapeY + shapeHeight - localY - height,
+        width,
+        height,
+        angle: numberOr(box.angle, 0)
+      };
     }
 
     function renderConnector(page, shape) {

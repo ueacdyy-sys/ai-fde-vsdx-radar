@@ -59,8 +59,17 @@ export interface VsdxEditorShape {
   endY?: number;
   imageDataUri?: string;
   geometryPath?: string;
+  textBox?: VsdxEditorTextBox;
   beginArrow?: number;
   endArrow?: number;
+}
+
+export interface VsdxEditorTextBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  angle?: number;
 }
 
 export interface VsdxEditorShapeUpdate {
@@ -160,6 +169,13 @@ const legacyXmlCellNames = new Set([
   'LinePattern',
   'FillForegnd',
   'FillPattern',
+  'TxtPinX',
+  'TxtPinY',
+  'TxtWidth',
+  'TxtHeight',
+  'TxtLocPinX',
+  'TxtLocPinY',
+  'TxtAngle',
   'PageWidth',
   'PageHeight'
 ]);
@@ -811,6 +827,7 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const beginArrow = readCellNumber(effectiveCells, 'BeginArrow', shapeFormulaRefs);
   const endArrow = readCellNumber(effectiveCells, 'EndArrow', shapeFormulaRefs);
   const angle = readCellNumber(effectiveCells, 'Angle', shapeFormulaRefs) ?? 0;
+  const textBox = readTextBox(effectiveCells, shapeFormulaRefs);
   const hasChildShapes = toArray(shape?.Shapes?.Shape).length > 0;
   const isConnector = isConnectorShape(shape) || isConnectorShape(masterShape);
   const text = readShapeText(shape) || readShapeText(masterShape);
@@ -827,6 +844,9 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     linePattern,
     strokeWidth: Math.max(0.015, lineWeight ?? 0.02)
   };
+  if (textBox) {
+    (base as typeof base & { textBox: VsdxEditorTextBox }).textBox = textBox;
+  }
 
   if (isConnector) {
     const beginX = readCellNumber(cells, 'BeginX', shapeFormulaRefs);
@@ -1462,6 +1482,39 @@ function readFormulaNumber(formula: unknown, refs?: Map<string, number>): number
 function readCellString(cells: unknown[], name: string): string | undefined {
   const cell = cells.find((candidate: any) => candidate?.N === name) as any;
   return typeof cell?.V === 'string' && cell.V.trim().length > 0 ? cell.V : undefined;
+}
+
+function readTextBox(cells: unknown[], refs: Map<string, number>): VsdxEditorTextBox | undefined {
+  const shapeWidth = readCellNumber(cells, 'Width', refs);
+  const shapeHeight = readCellNumber(cells, 'Height', refs);
+  if (shapeWidth === undefined || shapeHeight === undefined) {
+    return undefined;
+  }
+
+  const width = readCellNumber(cells, 'TxtWidth', refs) ?? shapeWidth;
+  const height = readCellNumber(cells, 'TxtHeight', refs) ?? shapeHeight;
+  const pinX = readCellNumber(cells, 'TxtPinX', refs) ?? shapeWidth / 2;
+  const pinY = readCellNumber(cells, 'TxtPinY', refs) ?? shapeHeight / 2;
+  const locPinX = readCellNumber(cells, 'TxtLocPinX', refs) ?? width / 2;
+  const locPinY = readCellNumber(cells, 'TxtLocPinY', refs) ?? height / 2;
+  const angle = readCellNumber(cells, 'TxtAngle', refs) ?? 0;
+  if (width <= 0 || height <= 0) {
+    return undefined;
+  }
+
+  const textBox = {
+    x: pinX - locPinX,
+    y: pinY - locPinY,
+    width,
+    height,
+    angle
+  };
+  const isDefault = nearlyEqual(textBox.x, 0)
+    && nearlyEqual(textBox.y, 0)
+    && nearlyEqual(textBox.width, shapeWidth)
+    && nearlyEqual(textBox.height, shapeHeight)
+    && nearlyEqual(angle, 0);
+  return isDefault ? undefined : textBox;
 }
 
 function createShapeFormulaRefs(cells: unknown[], baseRefs?: Map<string, number>): Map<string, number> {

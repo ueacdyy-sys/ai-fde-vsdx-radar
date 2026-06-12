@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.21 - 2026-06-12
+
+### Added
+
+- Added semantic `TextXForm` support so Visio text boxes with independent position, size, or angle are rendered in their intended text region instead of always being centered in the shape bounds.
+- Added `textBox` metadata to the editor model for modern Visio packages and Visio XML files, including formula-aware `TxtPinX`, `TxtPinY`, `TxtWidth`, `TxtHeight`, `TxtLocPinX`, `TxtLocPinY`, and `TxtAngle` cells.
+- Added regression coverage for modern and legacy XML text box transform cells.
+
 ## 0.1.20 - 2026-06-12
 
 ### Fixed
