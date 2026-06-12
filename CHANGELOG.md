@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.41 - 2026-06-12
+
+### Added
+
+- Added Visio `Strikethru` and `DoubleStrikethrough` text metadata so deleted or deprecated diagram labels render with SVG line-through decoration.
+- Preserves strikethrough through direct shape cells, Character sections, TextStyle StyleSheets, master-shape inheritance, formula cells, and legacy Visio XML files.
+- Added regression coverage for modern package direct/Character/StyleSheet strikethrough and legacy XML direct/TextStyle strikethrough.
+
 ## 0.1.40 - 2026-06-12
 
 ### Added

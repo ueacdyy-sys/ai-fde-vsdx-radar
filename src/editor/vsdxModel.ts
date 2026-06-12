@@ -108,6 +108,7 @@ export interface VsdxEditorTextStyle {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  strikethrough?: boolean;
   horizontalAlign?: 'left' | 'center' | 'right';
   verticalAlign?: 'top' | 'middle' | 'bottom';
   textPosAfterBullet?: number;
@@ -246,6 +247,8 @@ const legacyXmlCellNames = new Set([
   'Font',
   'Size',
   'Style',
+  'Strikethru',
+  'DoubleStrikethrough',
   'HAlign',
   'HorzAlign',
   'VerticalAlign',
@@ -328,6 +331,8 @@ const textStyleCellNames = new Set([
   'Font',
   'Size',
   'Style',
+  'Strikethru',
+  'DoubleStrikethrough',
   'HAlign',
   'HorzAlign',
   'VerticalAlign',
@@ -1698,6 +1703,10 @@ function readTextStyle(
     ?? readFontSizeCell(cells, refs);
   const fontStyle = readCharacterStyleCell(characterCells, refs)
     ?? readCharacterStyleCell(cells, refs);
+  const strikethrough = readTextBooleanCell(characterCells, 'Strikethru', refs)
+    ?? readTextBooleanCell(characterCells, 'DoubleStrikethrough', refs)
+    ?? readTextBooleanCell(cells, 'Strikethru', refs)
+    ?? readTextBooleanCell(cells, 'DoubleStrikethrough', refs);
   const horizontalAlign = readHorizontalAlign(paragraphCells, refs)
     ?? readHorizontalAlign(cells, refs);
   const verticalAlign = readVerticalAlign(cells, refs);
@@ -1720,6 +1729,9 @@ function readTextStyle(
     style.bold = (fontStyle & 1) !== 0;
     style.italic = (fontStyle & 2) !== 0;
     style.underline = (fontStyle & 4) !== 0;
+  }
+  if (strikethrough !== undefined) {
+    style.strikethrough = strikethrough;
   }
   if (horizontalAlign) {
     style.horizontalAlign = horizontalAlign;
@@ -1756,6 +1768,14 @@ function readCharacterStyleCell(cells: unknown[], refs?: Map<string, number>): n
     return undefined;
   }
   return Math.max(0, Math.trunc(value));
+}
+
+function readTextBooleanCell(cells: unknown[], name: string, refs?: Map<string, number>): boolean | undefined {
+  const value = readCellNumber(cells, name, refs);
+  if (value === undefined) {
+    return undefined;
+  }
+  return value !== 0;
 }
 
 function readHorizontalAlign(cells: unknown[], refs?: Map<string, number>): VsdxEditorTextStyle['horizontalAlign'] | undefined {

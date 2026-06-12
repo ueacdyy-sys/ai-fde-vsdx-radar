@@ -1359,8 +1359,15 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       if (style.italic) {
         text.setAttribute('font-style', 'italic');
       }
+      const decorations = [];
       if (style.underline) {
-        text.setAttribute('text-decoration', 'underline');
+        decorations.push('underline');
+      }
+      if (style.strikethrough) {
+        decorations.push('line-through');
+      }
+      if (decorations.length > 0) {
+        text.setAttribute('text-decoration', decorations.join(' '));
       }
     }
 
