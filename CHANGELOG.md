@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.23 - 2026-06-12
+
+### Added
+
+- Added semantic text style support for Visio `Color` and `Size` cells so text color and font size render in the interactive editor instead of always using fixed black auto-sized labels.
+- Added support for text formatting stored in `Character` sections, including StyleSheet, master, page-shape, and legacy Visio XML inheritance paths.
+- Added regression coverage for modern Visio package text style cells, Character row styles, legacy XML `Char` elements, and inherited legacy XML TextStyle formatting.
+
 ## 0.1.22 - 2026-06-12
 
 ### Added

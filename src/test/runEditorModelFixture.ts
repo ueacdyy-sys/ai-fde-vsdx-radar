@@ -14,6 +14,7 @@ async function main(): Promise<void> {
   await verifiesTextBoxTransformCells();
   await verifiesColorFormulaAndNoPaint();
   await verifiesPaintTransparencyCells();
+  await verifiesTextStyleCells();
   await verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle();
   await verifiesMasterChildShapeExpansion();
   await verifiesMultiRootMasterShapeExpansion();
@@ -427,6 +428,43 @@ async function verifiesPaintTransparencyCells(): Promise<void> {
   assert.ok(Math.abs((shape.fillOpacity ?? 0) - 0.6) < 0.0001, 'expected fill transparency to become fill opacity');
   assert.ok(Math.abs((shape.strokeOpacity ?? 0) - 0.25) < 0.0001, 'expected line transparency to become stroke opacity');
   assert.ok(Math.abs((connector.strokeOpacity ?? 0) - 0.75) < 0.0001, 'expected formula line transparency to become connector stroke opacity');
+}
+
+async function verifiesTextStyleCells(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Styled Text">
+      <Cell N="PinX" V="2"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="Color" V="2"/>
+      <Cell N="Size" V="18" U="PT"/>
+      <Text>Direct text style</Text>
+    </Shape>
+    <Shape ID="2" NameU="Character Text">
+      <Cell N="PinX" V="5"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Section N="Character" IX="0">
+        <Row IX="0"><Cell N="Color" F="RGB(17,34,51)"/><Cell N="Size" V="0.25" U="IN"/></Row>
+      </Section>
+      <Text>Character text style</Text>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'text-style-fixture.vsdx');
+  const direct = diagram.pages[0]?.shapes[0];
+  const character = diagram.pages[0]?.shapes[1];
+  assert.strictEqual(direct?.textStyle?.color, '#ff0000', 'expected direct text color to use Visio indexed color');
+  assert.ok(Math.abs((direct?.textStyle?.fontSize ?? 0) - 0.25) < 0.0001, 'expected point text size to be converted to inches');
+  assert.strictEqual(character?.textStyle?.color, '#112233', 'expected character row text color to be parsed');
+  assert.ok(Math.abs((character?.textStyle?.fontSize ?? 0) - 0.25) < 0.0001, 'expected character row text size to be parsed');
 }
 
 async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Promise<void> {
@@ -843,6 +881,10 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
             <TxtLocPinX>0.5</TxtLocPinX>
             <TxtLocPinY>0.25</TxtLocPinY>
           </TextXForm>
+          <Char IX="0">
+            <Color>RGB(68,85,102)</Color>
+            <Size U="PT">14</Size>
+          </Char>
           <Text>Legacy text</Text>
           <Geom IX="0">
             <MoveTo IX="1"><X>0</X><Y>0</Y></MoveTo>
@@ -873,6 +915,8 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.strictEqual(shape.editable, true);
   assert.strictEqual(shape.text, 'Legacy text');
   assert.ok(shape.textBox, 'expected legacy XML text box metadata');
+  assert.strictEqual(shape.textStyle?.color, '#445566', 'expected legacy XML text color metadata');
+  assert.ok(Math.abs((shape.textStyle?.fontSize ?? 0) - (14 / 72)) < 0.0001, 'expected legacy XML text size metadata');
   assert.ok(Math.abs((shape.textBox?.x ?? 0) - 1) < 0.0001, 'expected legacy XML text box x');
   assert.ok(Math.abs((shape.textBox?.width ?? 0) - 1) < 0.0001, 'expected legacy XML text box width');
   assert.ok(shape.geometryPath?.startsWith('M 0 1 L 2 1'), 'expected legacy XML geometry to render');
@@ -931,6 +975,7 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
       <Cell N="LineColor" V="#6688aa"/>
       <Cell N="LinePattern" V="2"/>
       <Cell N="LineWeight" V="0.04"/>
+      <Section N="Character" IX="0"><Row IX="0"><Cell N="Color" V="#123456"/><Cell N="Size" V="16" U="PT"/></Row></Section>
     </StyleSheet>
   </StyleSheets>
   <Pages>
@@ -960,6 +1005,8 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
   assert.strictEqual(shape?.line, '#6688aa', 'expected legacy XML LineStyle to be applied');
   assert.strictEqual(shape?.linePattern, 2, 'expected legacy XML line pattern to be applied');
   assert.ok(Math.abs((shape?.strokeWidth ?? 0) - 0.04) < 0.0001, 'expected legacy XML line weight to be applied');
+  assert.strictEqual(shape?.textStyle?.color, '#123456', 'expected legacy XML TextStyle color to be applied');
+  assert.ok(Math.abs((shape?.textStyle?.fontSize ?? 0) - (16 / 72)) < 0.0001, 'expected legacy XML TextStyle size to be applied');
 }
 
 async function verifiesLegacyXmlStencilFallbackPreview(): Promise<void> {

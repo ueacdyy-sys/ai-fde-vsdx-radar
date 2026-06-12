@@ -971,9 +971,11 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
           const degrees = -textBox.angle * 180 / Math.PI;
           text.setAttribute('transform', 'rotate(' + degrees + ' ' + (textBox.x + textBox.width / 2) + ' ' + (textBox.y + textBox.height / 2) + ')');
         }
-        text.setAttribute('font-size', String(Math.min(0.16, Math.max(0.08, textBox.height / 3.2))));
+        text.style.fill = safeColor(shape.textStyle && shape.textStyle.color, '#111827');
+        const fontSize = textFontSize(shape, textBox);
+        text.setAttribute('font-size', String(fontSize));
         const lines = String(shape.text).replace(/\\r/g, '').split('\\n').filter(line => line.length > 0);
-        const lineHeight = Math.min(0.18, Math.max(0.09, textBox.height / Math.max(2, lines.length + 1)));
+        const lineHeight = Math.min(Math.max(fontSize * 1.2, 0.08), Math.max(0.08, textBox.height / Math.max(2, lines.length + 1)));
         const startOffset = -((lines.length - 1) * lineHeight) / 2;
         lines.slice(0, 5).forEach((line, index) => {
           const tspan = document.createElementNS(svgNS, 'tspan');
@@ -1027,6 +1029,11 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         height,
         angle: numberOr(box.angle, 0)
       };
+    }
+
+    function textFontSize(shape, textBox) {
+      const fallback = Math.min(0.16, Math.max(0.08, textBox.height / 3.2));
+      return clamp(numberOr(shape.textStyle && shape.textStyle.fontSize, fallback), 0.04, Math.max(0.04, textBox.height * 0.75));
     }
 
     function renderConnector(page, shape) {

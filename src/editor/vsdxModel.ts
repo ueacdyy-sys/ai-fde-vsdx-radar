@@ -62,6 +62,7 @@ export interface VsdxEditorShape {
   imageDataUri?: string;
   geometryPath?: string;
   textBox?: VsdxEditorTextBox;
+  textStyle?: VsdxEditorTextStyle;
   beginArrow?: number;
   endArrow?: number;
 }
@@ -72,6 +73,11 @@ export interface VsdxEditorTextBox {
   width: number;
   height: number;
   angle?: number;
+}
+
+export interface VsdxEditorTextStyle {
+  color?: string;
+  fontSize?: number;
 }
 
 export interface VsdxEditorShapeUpdate {
@@ -141,6 +147,7 @@ type StyleCategory = 'line' | 'fill' | 'text';
 interface StyleSheetContext {
   byId: Map<string, StyleSheetEntry>;
   resolvedCellCache: Map<string, any[]>;
+  resolvedSectionCache: Map<string, any[]>;
 }
 
 interface StyleSheetEntry {
@@ -171,6 +178,9 @@ const legacyXmlCellNames = new Set([
   'LinePattern',
   'FillForegnd',
   'FillPattern',
+  'Color',
+  'Char.Color',
+  'Size',
   'TxtPinX',
   'TxtPinY',
   'TxtWidth',
@@ -503,12 +513,14 @@ function collectLegacyXmlCells(source: any, names: Set<string>): any[] {
     source.XForm1D,
     source.Line,
     source.Fill,
+    source.Char,
+    source.Character,
     source.TextXForm,
     source.PageProps,
     source.Layout,
     source.Misc,
     source.ShapeLayout
-  ].filter(isDefined);
+  ].filter(isDefined).flatMap(group => toArray(group as any));
 
   for (const group of groups) {
     if (!group || typeof group !== 'object') {
@@ -823,6 +835,12 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const masterStyleCells = styleCellsForShape(masterShape, context.styleSheets);
   const pageStyleCells = styleCellsForShape(shape, context.styleSheets);
   const effectiveCells = mergeEffectiveCellLayers(masterStyleCells, masterCells, pageStyleCells, cells);
+  const effectiveSections = mergeEffectiveSections(
+    styleSectionsForShape(masterShape, context.styleSheets),
+    toArray(masterShape?.Section),
+    styleSectionsForShape(shape, context.styleSheets),
+    toArray(shape?.Section)
+  );
   const shapeFormulaRefs = createShapeFormulaRefs(effectiveCells, context.formulaRefs);
   const lineWeight = readCellNumber(effectiveCells, 'LineWeight', shapeFormulaRefs);
   const linePattern = readCellNumber(effectiveCells, 'LinePattern', shapeFormulaRefs);
@@ -830,6 +848,7 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const endArrow = readCellNumber(effectiveCells, 'EndArrow', shapeFormulaRefs);
   const angle = readCellNumber(effectiveCells, 'Angle', shapeFormulaRefs) ?? 0;
   const textBox = readTextBox(effectiveCells, shapeFormulaRefs);
+  const textStyle = readTextStyle(effectiveCells, effectiveSections, shapeFormulaRefs);
   const hasChildShapes = toArray(shape?.Shapes?.Shape).length > 0;
   const isConnector = isConnectorShape(shape) || isConnectorShape(masterShape);
   const text = readShapeText(shape) || readShapeText(masterShape);
@@ -850,6 +869,9 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   };
   if (textBox) {
     (base as typeof base & { textBox: VsdxEditorTextBox }).textBox = textBox;
+  }
+  if (textStyle) {
+    (base as typeof base & { textStyle: VsdxEditorTextStyle }).textStyle = textStyle;
   }
 
   if (isConnector) {
@@ -1373,16 +1395,16 @@ function readStyleSheetsFromDocument(document: any): StyleSheetContext {
       lineStyleId: normalizedId(styleSheet?.LineStyle),
       fillStyleId: normalizedId(styleSheet?.FillStyle),
       textStyleId: normalizedId(styleSheet?.TextStyle),
-      cells: toArray(styleSheet?.Cell),
+      cells: mergeCells(toArray(styleSheet?.Cell), collectLegacyXmlCells(styleSheet, legacyXmlCellNames)),
       sections: toArray(styleSheet?.Section)
     });
   }
 
-  return { byId, resolvedCellCache: new Map() };
+  return { byId, resolvedCellCache: new Map(), resolvedSectionCache: new Map() };
 }
 
 function emptyStyleSheets(): StyleSheetContext {
-  return { byId: new Map(), resolvedCellCache: new Map() };
+  return { byId: new Map(), resolvedCellCache: new Map(), resolvedSectionCache: new Map() };
 }
 
 async function readRelationshipImageDataUris(zip: JSZip, sourceEntry: string): Promise<Map<string, string>> {
@@ -1521,6 +1543,40 @@ function readTextBox(cells: unknown[], refs: Map<string, number>): VsdxEditorTex
   return isDefault ? undefined : textBox;
 }
 
+function readTextStyle(cells: unknown[], sections: any[], refs: Map<string, number>): VsdxEditorTextStyle | undefined {
+  const characterCells = readPrimaryCharacterCells(sections);
+  const color = readColorCell(characterCells, 'Color')
+    ?? readColorCell(cells, 'Char.Color')
+    ?? readColorCell(cells, 'Color');
+  const fontSize = readFontSizeCell(characterCells, refs)
+    ?? readFontSizeCell(cells, refs);
+  const style: VsdxEditorTextStyle = {};
+  if (color) {
+    style.color = color;
+  }
+  if (fontSize !== undefined) {
+    style.fontSize = fontSize;
+  }
+  return Object.keys(style).length > 0 ? style : undefined;
+}
+
+function readPrimaryCharacterCells(sections: any[]): any[] {
+  for (const section of sections.filter(section => String(section?.N ?? '').toLowerCase() === 'character')) {
+    const sectionCells = toArray(section?.Cell);
+    if (sectionCells.length > 0) {
+      return sectionCells;
+    }
+    const row = toArray(section?.Row)
+      .filter(candidate => String(candidate?.Del ?? '') !== '1')
+      .sort((a, b) => cleanNumber(a?.IX, 0) - cleanNumber(b?.IX, 0))[0];
+    const rowCells = toArray(row?.Cell);
+    if (rowCells.length > 0) {
+      return rowCells;
+    }
+  }
+  return [];
+}
+
 function createShapeFormulaRefs(cells: unknown[], baseRefs?: Map<string, number>): Map<string, number> {
   const refs = baseRefs ? new Map(baseRefs) : new Map<string, number>();
   addFormulaRefsForCells(cells, refs);
@@ -1577,6 +1633,69 @@ function readOpacityCell(cells: unknown[], name: string, refs?: Map<string, numb
     return undefined;
   }
   return Math.max(0, Math.min(1, 1 - Math.max(0, Math.min(100, transparency)) / 100));
+}
+
+function readFontSizeCell(cells: unknown[], refs?: Map<string, number>): number | undefined {
+  const cell = cells.find((candidate: any) => candidate?.N === 'Size') as any;
+  if (!cell) {
+    return undefined;
+  }
+  const numeric = readCellNumber(cells, 'Size', refs) ?? readUnitNumber(cell.V) ?? readUnitNumber(cell.F);
+  if (numeric === undefined) {
+    return undefined;
+  }
+  return normalizeFontSize(numeric, inferUnit(cell));
+}
+
+function readUnitNumber(value: unknown): number | undefined {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const match = value.trim().match(/(-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)/);
+  if (!match) {
+    return undefined;
+  }
+  const number = Number(match[1]);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function inferUnit(cell: any): string | undefined {
+  const explicit = typeof cell?.U === 'string' ? cell.U.trim().toLowerCase() : '';
+  if (explicit) {
+    return explicit;
+  }
+  for (const value of [cell?.V, cell?.F]) {
+    if (typeof value !== 'string') {
+      continue;
+    }
+    const match = value.match(/(?:\d+\.?\d*|\.\d+)\s*(pt|in|dl|mm|cm)\b/i);
+    if (match) {
+      return match[1].toLowerCase();
+    }
+  }
+  return undefined;
+}
+
+function normalizeFontSize(value: number, unit?: string): number | undefined {
+  if (!Number.isFinite(value) || value <= 0) {
+    return undefined;
+  }
+  switch ((unit ?? '').toLowerCase()) {
+    case 'pt':
+      return value / 72;
+    case 'mm':
+      return value / 25.4;
+    case 'cm':
+      return value / 2.54;
+    case 'in':
+    case 'dl':
+      return value;
+    default:
+      return value > 2 ? value / 72 : value;
+  }
 }
 
 function readColorCell(cells: unknown[], name: string): string | undefined {
@@ -1660,6 +1779,18 @@ function styleCellsForShape(shape: any, styleSheets: StyleSheetContext): any[] {
   );
 }
 
+function styleSectionsForShape(shape: any, styleSheets: StyleSheetContext): any[] {
+  if (!shape) {
+    return [];
+  }
+
+  return mergeEffectiveSections(
+    styleSectionsForCategory(normalizedId(shape?.LineStyle), 'line', styleSheets),
+    styleSectionsForCategory(normalizedId(shape?.FillStyle), 'fill', styleSheets),
+    styleSectionsForCategory(normalizedId(shape?.TextStyle), 'text', styleSheets)
+  );
+}
+
 function styleCellsForCategory(
   styleId: string | undefined,
   category: StyleCategory,
@@ -1698,8 +1829,53 @@ function styleCellsForCategory(
   return resolved;
 }
 
+function styleSectionsForCategory(
+  styleId: string | undefined,
+  category: StyleCategory,
+  styleSheets: StyleSheetContext,
+  seen = new Set<string>()
+): any[] {
+  if (!styleId || seen.has(`${category}:${styleId}`)) {
+    return [];
+  }
+  const cacheKey = `${category}:${styleId}`;
+  const cached = styleSheets.resolvedSectionCache.get(cacheKey);
+  if (cached) {
+    return cached.map(section => cloneXml(section));
+  }
+
+  const styleSheet = styleSheets.byId.get(styleId);
+  if (!styleSheet) {
+    return [];
+  }
+
+  seen.add(cacheKey);
+  const parentStyleId = category === 'line'
+    ? styleSheet.lineStyleId
+    : category === 'fill'
+      ? styleSheet.fillStyleId
+      : styleSheet.textStyleId;
+
+  const baseSections = styleId === '0' ? [] : styleSectionsForCategory('0', category, styleSheets, seen);
+  const parentSections = parentStyleId === '0' ? [] : styleSectionsForCategory(parentStyleId, category, styleSheets, seen);
+  const localSections = category === 'text'
+    ? styleSheet.sections.filter(isTextStyleSection)
+    : [];
+  const resolved = mergeEffectiveSections(baseSections, parentSections, localSections);
+  styleSheets.resolvedSectionCache.set(cacheKey, resolved.map(section => cloneXml(section)));
+  return resolved;
+}
+
+function isTextStyleSection(section: any): boolean {
+  return String(section?.N ?? '').toLowerCase() === 'character';
+}
+
 function mergeEffectiveCellLayers(...layers: any[][]): any[] {
   return layers.reduce((merged, layer) => mergeEffectiveCells(merged, layer), [] as any[]);
+}
+
+function mergeEffectiveSections(...layers: any[][]): any[] {
+  return layers.reduce((merged, layer) => mergeShapeSections(merged, layer), [] as any[]);
 }
 
 function mergeEffectiveCells(baseCells: any[], overrideCells: any[]): any[] {
