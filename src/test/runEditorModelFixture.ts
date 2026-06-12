@@ -1109,7 +1109,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
             <LocPinX>1</LocPinX>
             <LocPinY>0.5</LocPinY>
           </XForm>
-          <Line><LinePattern>2</LinePattern><LineCap>2</LineCap><Rounding>0.19</Rounding><BeginArrowSize>1</BeginArrowSize><EndArrowSize>4</EndArrowSize></Line>
+          <Line><LinePattern>2</LinePattern><LineCap>2</LineCap><LineColorTrans>30</LineColorTrans><Rounding>0.19</Rounding><BeginArrowSize>1</BeginArrowSize><EndArrowSize>4</EndArrowSize></Line>
           <Fill>
             <FillPattern>7</FillPattern>
             <FillForegnd>#aa5500</FillForegnd>
@@ -1167,7 +1167,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
             <EndX>5</EndX>
             <EndY>4</EndY>
           </XForm1D>
-          <Line><BeginArrow>4</BeginArrow><EndArrow>13</EndArrow></Line>
+          <Line><BeginArrow>4</BeginArrow><EndArrow>13</EndArrow><LineColorTrans>20</LineColorTrans></Line>
         </Shape>
       </Shapes>
     </Page>
@@ -1183,6 +1183,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.strictEqual(shape.text, 'Legacy text');
   assert.strictEqual(shape.lineCap, 2, 'expected legacy XML direct line cap metadata');
   assert.strictEqual(shape.linePattern, 2, 'expected legacy XML direct line pattern metadata');
+  assert.ok(Math.abs((shape.strokeOpacity ?? 0) - 0.7) < 0.0001, 'expected legacy XML direct line transparency metadata');
   assert.ok(Math.abs((shape.rounding ?? 0) - 0.19) < 0.0001, 'expected legacy XML direct rounding metadata');
   assert.strictEqual(shape.fillPattern, 7, 'expected legacy XML direct fill pattern metadata');
   assert.strictEqual(shape.fill, '#aa5500', 'expected legacy XML direct fill foreground metadata');
@@ -1223,6 +1224,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.strictEqual(connector.editable, true);
   assert.strictEqual(connector.beginArrow, 4, 'expected legacy XML direct begin arrow metadata');
   assert.strictEqual(connector.endArrow, 13, 'expected legacy XML direct end arrow metadata');
+  assert.ok(Math.abs((connector.strokeOpacity ?? 0) - 0.8) < 0.0001, 'expected legacy XML direct connector line transparency metadata');
 
   const updated = replaceShapeInDiagram(replaceShapeInDiagram(diagram, {
     pageEntry: diagram.pages[0].entry,
@@ -1277,6 +1279,7 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
       <Cell N="FillBkgndTrans" V="25"/>
       <Cell N="FillPattern" V="5"/>
       <Cell N="LineColor" V="#6688aa"/>
+      <Cell N="LineColorTrans" V="35"/>
       <Cell N="LinePattern" V="2"/>
       <Cell N="LineCap" V="1"/>
       <Cell N="Rounding" V="0.16"/>
@@ -1338,6 +1341,7 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
   assert.strictEqual(shape?.fillBackground, '#ddeeff', 'expected legacy XML FillStyle fill background to be applied');
   assert.ok(Math.abs((shape?.fillBackgroundOpacity ?? 0) - 0.75) < 0.0001, 'expected legacy XML FillStyle fill background opacity to be applied');
   assert.strictEqual(shape?.line, '#6688aa', 'expected legacy XML LineStyle to be applied');
+  assert.ok(Math.abs((shape?.strokeOpacity ?? 0) - 0.65) < 0.0001, 'expected legacy XML LineStyle line transparency to be applied');
   assert.strictEqual(shape?.linePattern, 2, 'expected legacy XML line pattern to be applied');
   assert.strictEqual(shape?.lineCap, 1, 'expected legacy XML line cap to be applied');
   assert.ok(Math.abs((shape?.rounding ?? 0) - 0.16) < 0.0001, 'expected legacy XML line rounding to be applied');
@@ -1346,6 +1350,7 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
   assert.strictEqual(connector?.kind, 'connector', 'expected legacy XML styled connector');
   assert.strictEqual(connector?.beginArrow, 4, 'expected legacy XML connector begin arrow to inherit from LineStyle');
   assert.strictEqual(connector?.endArrow, 13, 'expected legacy XML connector end arrow to inherit from LineStyle');
+  assert.ok(Math.abs((connector?.strokeOpacity ?? 0) - 0.65) < 0.0001, 'expected legacy XML connector line transparency to inherit from LineStyle');
   assert.strictEqual(connector?.beginArrowSize, 2, 'expected legacy XML connector begin arrow size to inherit from LineStyle');
   assert.strictEqual(connector?.endArrowSize, 4, 'expected legacy XML connector end arrow size to inherit from LineStyle');
   assert.strictEqual(shape?.shadow?.color, '#101820', 'expected legacy XML FillStyle shadow color to be applied');

@@ -2,6 +2,13 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.38 - 2026-06-12
+
+### Fixed
+
+- Fixed legacy Visio XML parsing for `LineColorTrans` so shape and connector stroke transparency render through the existing SVG opacity path.
+- Added regression coverage for direct legacy XML line transparency and inherited legacy XML LineStyle transparency.
+
 ## 0.1.37 - 2026-06-12
 
 ### Fixed

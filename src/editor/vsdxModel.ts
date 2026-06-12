@@ -212,6 +212,7 @@ const legacyXmlCellNames = new Set([
   'LineColor',
   'LinePattern',
   'LineCap',
+  'LineColorTrans',
   'Rounding',
   'BeginArrow',
   'EndArrow',
