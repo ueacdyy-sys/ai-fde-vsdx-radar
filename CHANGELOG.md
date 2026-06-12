@@ -2,6 +2,16 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.14 - 2026-06-12
+
+### Added
+
+- Added semantic connector styling for Visio `BeginArrow`, `EndArrow`, and `LinePattern` cells in the interactive editor.
+- Added SVG arrow markers and dashed/dotted connector rendering so flow direction and line semantics are visible without invoking Visio COM during normal open.
+- Added editor model regression coverage for connector arrow and line pattern extraction.
+- Added an in-editor conversion action for legacy `.vsd`, `.vss`, `.vst`, `.vdw`, `.vwi`, and `.vsw` files so every recognized Visio extension has a visible next step from the same VS Code preview surface.
+- Added workspace report, risk dashboard, and risk-open coverage for all recognized Visio extensions, with legacy files tagged as `LEGACY_CONVERSION_REQUIRED` until converted.
+
 ## 0.1.13 - 2026-06-12
 
 ### Added

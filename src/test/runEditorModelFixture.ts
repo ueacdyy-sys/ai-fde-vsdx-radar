@@ -22,6 +22,7 @@ async function main(): Promise<void> {
   await verifiesRichTextWriteBackPreservesFormattingMarkers();
   await verifiesConnectorWriteBackSynchronizesGeometry();
   await verifiesConnectorGeometryRows();
+  await verifiesConnectorArrowAndLinePattern();
   await verifiesMasterFallbackWhenPageGeometryIsIncomplete();
   await verifiesEmbeddedImageRelationship();
   await verifiesMasterImageRelationship();
@@ -481,6 +482,7 @@ async function verifiesLegacyVisioBinaryGetsReadOnlyDiagram(): Promise<void> {
   assert.strictEqual(diagram.formatSupport, 'legacy-binary');
   assert.strictEqual(diagram.pages.length, 1, 'expected legacy binary to produce a read-only explanation page');
   assert.strictEqual(diagram.pages[0].shapes[0]?.editable, false);
+  assert.ok(diagram.readOnlyReason?.includes('Convert this file to a modern Visio package'));
   const writtenBytes = await writeVsdxDiagram(sourceBytes, diagram);
   assert.strictEqual(Buffer.compare(sourceBytes, writtenBytes), 0, 'expected legacy binary save to preserve original bytes');
 }
@@ -491,6 +493,7 @@ async function verifiesLegacyOpaqueVisioGetsReadOnlyDiagram(): Promise<void> {
   assert.strictEqual(diagram.formatSupport, 'legacy-opaque');
   assert.strictEqual(diagram.pages.length, 1, 'expected opaque legacy format to produce a read-only explanation page');
   assert.strictEqual(diagram.pages[0].shapes[0]?.editable, false);
+  assert.ok(diagram.readOnlyReason?.includes('Convert it to a modern Visio package'));
   const writtenBytes = await writeVsdxDiagram(sourceBytes, diagram);
   assert.strictEqual(Buffer.compare(sourceBytes, writtenBytes), 0, 'expected opaque legacy save to preserve original bytes');
 }
@@ -783,6 +786,37 @@ async function verifiesConnectorGeometryRows(): Promise<void> {
   assert.strictEqual(connector.kind, 'connector');
   assert.strictEqual(connector.editable, true);
   assert.strictEqual(connector.geometryPath, 'M 0.5 2 L 0.5 0');
+}
+
+async function verifiesConnectorArrowAndLinePattern(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Connector" OneD="1">
+      <Cell N="BeginX" V="1"/>
+      <Cell N="BeginY" V="2"/>
+      <Cell N="EndX" V="5"/>
+      <Cell N="EndY" V="2"/>
+      <Cell N="PinX" V="3"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="4"/>
+      <Cell N="Height" V="0"/>
+      <Cell N="LinePattern" V="2"/>
+      <Cell N="BeginArrow" V="13"/>
+      <Cell N="EndArrow" V="13"/>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'connector-style-fixture.vsdx');
+  const connector = diagram.pages[0]?.shapes[0];
+  assert.ok(connector, 'expected connector to be parsed');
+  assert.strictEqual(connector.kind, 'connector');
+  assert.strictEqual(connector.linePattern, 2, 'expected dashed line pattern to be exposed');
+  assert.strictEqual(connector.beginArrow, 13, 'expected begin arrow to be exposed');
+  assert.strictEqual(connector.endArrow, 13, 'expected end arrow to be exposed');
 }
 
 async function verifiesEmbeddedImageRelationship(): Promise<void> {

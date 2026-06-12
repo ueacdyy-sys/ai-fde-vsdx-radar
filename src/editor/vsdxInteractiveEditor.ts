@@ -142,6 +142,11 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       return;
     }
 
+    if (message.command === 'convertLegacy') {
+      await vscode.commands.executeCommand('aiFdeVsdxRadar.convertToModernVisio', document.uri);
+      return;
+    }
+
     if (message.command === 'save') {
       await vscode.commands.executeCommand('workbench.action.files.save');
       return;
@@ -277,6 +282,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
     #settingsButton,
     #togglePanel,
     #revealSource,
+    #convertLegacy,
     #saveFile {
       flex: 0 0 auto;
     }
@@ -416,6 +422,10 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
     .connector-node {
       cursor: move;
     }
+    .connector-arrow {
+      fill: context-stroke;
+      stroke: none;
+    }
     .shape-outline {
       vector-effect: non-scaling-stroke;
     }
@@ -551,6 +561,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         <button id="settingsButton" title="Settings" data-i18n="settings">Settings</button>
         <button id="togglePanel" title="Toggle inspector" data-i18n="collapsePanel">Hide Panel</button>
         <button id="revealSource" title="Reveal source file" data-i18n="source">Source</button>
+        <button id="convertLegacy" class="primary" title="Convert legacy Visio file" data-i18n="convertLegacy">Convert</button>
         <button id="saveFile" class="primary" title="Save VSDX" data-i18n="save">Save</button>
       </div>
     </div>
@@ -597,6 +608,9 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         collapsePanel: '隐藏侧栏',
         showPanel: '显示侧栏',
         source: '源文件',
+        convertLegacy: '转换',
+        convertLegacyAction: '转换为现代 Visio 包',
+        convertLegacyHint: '此旧格式不能直接进行语义编辑。转换后会自动打开生成的 .vsdx/.vssx/.vstx 文件。',
         save: '保存',
         page: '页面',
         noSelection: '未选择',
@@ -636,6 +650,9 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         collapsePanel: 'Hide Panel',
         showPanel: 'Show Panel',
         source: 'Source',
+        convertLegacy: 'Convert',
+        convertLegacyAction: 'Convert to modern Visio package',
+        convertLegacyHint: 'This legacy format cannot be semantically edited in place. After conversion the generated .vsdx/.vssx/.vstx file opens automatically.',
         save: 'Save',
         page: 'Page',
         noSelection: 'No selection',
@@ -695,6 +712,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
     document.getElementById('zoomOne').addEventListener('click', () => setZoom(1));
     document.getElementById('zoomFit').addEventListener('click', fitPage);
     document.getElementById('saveFile').addEventListener('click', () => vscode.postMessage({ command: 'save' }));
+    document.getElementById('convertLegacy').addEventListener('click', () => vscode.postMessage({ command: 'convertLegacy' }));
     document.getElementById('revealSource').addEventListener('click', () => vscode.postMessage({ command: 'revealSource' }));
     document.getElementById('settingsButton').addEventListener('click', () => {
       inspectorMode = inspectorMode === 'settings' ? 'selection' : 'settings';
@@ -818,6 +836,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       }));
       pageSelect.value = String(pageIndex);
       zoomReadout.textContent = Math.round(zoom * 100) + '%';
+      applyFormatActions();
       renderStatusPill();
       renderCanvas();
       renderInspector();
@@ -833,6 +852,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       svg.setAttribute('viewBox', '0 0 ' + page.width + ' ' + page.height);
       svg.style.width = Math.max(80, page.width * 96 * zoom) + 'px';
       svg.style.height = Math.max(80, page.height * 96 * zoom) + 'px';
+      svg.append(svgDefinitions());
       svg.addEventListener('pointerdown', event => {
         if (event.target === svg) {
           selectedId = '';
@@ -858,6 +878,28 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
 
       pageStage.append(svg);
       zoomReadout.textContent = Math.round(zoom * 100) + '%';
+    }
+
+    function svgDefinitions() {
+      const defs = document.createElementNS(svgNS, 'defs');
+      const markerEnd = document.createElementNS(svgNS, 'marker');
+      markerEnd.id = 'arrow-end';
+      markerEnd.setAttribute('viewBox', '0 0 10 10');
+      markerEnd.setAttribute('refX', '9');
+      markerEnd.setAttribute('refY', '5');
+      markerEnd.setAttribute('markerWidth', '7');
+      markerEnd.setAttribute('markerHeight', '7');
+      markerEnd.setAttribute('orient', 'auto-start-reverse');
+      markerEnd.setAttribute('markerUnits', 'strokeWidth');
+      const endPath = document.createElementNS(svgNS, 'path');
+      endPath.classList.add('connector-arrow');
+      endPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
+      markerEnd.append(endPath);
+
+      const markerStart = markerEnd.cloneNode(true);
+      markerStart.id = 'arrow-start';
+      defs.append(markerStart, markerEnd);
+      return defs;
     }
 
     function renderShape(page, shape) {
@@ -982,6 +1024,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         path.setAttribute('stroke-linecap', 'round');
         path.setAttribute('stroke-linejoin', 'round');
         path.setAttribute('vector-effect', 'non-scaling-stroke');
+        applyConnectorStyle(path, shape);
         group.append(path);
         connectorBody = path;
       } else {
@@ -994,6 +1037,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         line.setAttribute('stroke-width', String(Math.max(0.018, numberOr(shape.strokeWidth, 0.025))));
         line.setAttribute('stroke-linecap', 'round');
         line.setAttribute('vector-effect', 'non-scaling-stroke');
+        applyConnectorStyle(line, shape);
         group.append(line);
         connectorBody = line;
       }
@@ -1008,6 +1052,34 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         }
       });
       return group;
+    }
+
+    function applyConnectorStyle(node, shape) {
+      const dashArray = connectorDashArray(shape);
+      if (dashArray) {
+        node.setAttribute('stroke-dasharray', dashArray);
+      }
+      if (numberOr(shape.beginArrow, 0) > 0) {
+        node.setAttribute('marker-start', 'url(#arrow-start)');
+      }
+      if (numberOr(shape.endArrow, 0) > 0) {
+        node.setAttribute('marker-end', 'url(#arrow-end)');
+      }
+    }
+
+    function connectorDashArray(shape) {
+      const pattern = Math.round(numberOr(shape.linePattern, 1));
+      const stroke = Math.max(0.018, numberOr(shape.strokeWidth, 0.025));
+      if (pattern === 2) {
+        return String(round4(stroke * 4)) + ' ' + String(round4(stroke * 2.5));
+      }
+      if (pattern === 3) {
+        return String(round4(stroke)) + ' ' + String(round4(stroke * 2.2));
+      }
+      if (pattern >= 4) {
+        return String(round4(stroke * 4)) + ' ' + String(round4(stroke * 2)) + ' ' + String(round4(stroke)) + ' ' + String(round4(stroke * 2));
+      }
+      return '';
     }
 
     function connectorHandle(page, shape, mode, x, y) {
@@ -1152,6 +1224,17 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         const qa = document.createElement('code');
         qa.textContent = t('qaPath') + ': ' + currentStatus.qaPath;
         card.append(qa);
+      }
+      if (isLegacyConvertRequired()) {
+        const hint = document.createElement('div');
+        hint.className = 'status';
+        hint.textContent = t('convertLegacyHint');
+        const action = document.createElement('button');
+        action.type = 'button';
+        action.className = 'primary';
+        action.textContent = t('convertLegacyAction');
+        action.addEventListener('click', () => vscode.postMessage({ command: 'convertLegacy' }));
+        card.append(hint, action);
       }
       return card;
     }
@@ -1316,9 +1399,17 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       document.getElementById('settingsButton').title = t('settings');
       document.getElementById('togglePanel').title = panelCollapsed ? t('showPanel') : t('collapsePanel');
       document.getElementById('revealSource').title = t('source');
+      document.getElementById('convertLegacy').title = t('convertLegacyAction');
       document.getElementById('saveFile').title = t('save');
+      applyFormatActions();
       applyPanelLayout();
       renderStatusPill();
+    }
+
+    function applyFormatActions() {
+      const convertRequired = isLegacyConvertRequired();
+      document.getElementById('convertLegacy').hidden = !convertRequired;
+      document.getElementById('saveFile').hidden = convertRequired;
     }
 
     function renderStatusPill() {
@@ -1417,6 +1508,10 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         return 'none';
       }
       return /^#[0-9a-fA-F]{3,8}$/.test(value) ? value : fallback;
+    }
+
+    function isLegacyConvertRequired() {
+      return diagram && (diagram.formatSupport === 'legacy-binary' || diagram.formatSupport === 'legacy-opaque');
     }
 
     vscode.postMessage({ command: 'ready' });

@@ -14,7 +14,6 @@ import {
   isLegacyVisioPath,
   isSemanticVisioPath,
   isVisioPath,
-  semanticVisioFileGlob,
   semanticVisioOpenDialogExtensions,
   resolvePreviewPath,
   resolveQaPath,
@@ -2258,7 +2257,7 @@ async function collectWorkspaceReportItems(): Promise<WorkspaceReportCollection>
     : path.join(workspaceFolders[0].uri.fsPath, config.outputDirectory);
   const notesPath = resolveWorkspaceNotesPath(reportRoot);
   const notes = await loadWorkspaceRiskNotes(notesPath);
-  const uris = await vscode.workspace.findFiles(semanticVisioFileGlob, '**/{.aifde,.git,node_modules}/**');
+  const uris = await vscode.workspace.findFiles(allVisioFileGlob, '**/{.aifde,.git,node_modules}/**');
   const items: WorkspaceReportItem[] = [];
 
   for (const uri of uris.sort((a, b) => a.fsPath.localeCompare(b.fsPath))) {
@@ -2275,7 +2274,7 @@ async function collectWorkspaceReportItems(): Promise<WorkspaceReportCollection>
       statusRank: getStatusRank(status.badge),
       errors: status.errors,
       warnings: status.warnings,
-      riskCodes: await readQaRiskCodes(status.qaPath),
+      riskCodes: await readWorkspaceRiskCodes(uri.fsPath, status.qaPath),
       previewPath: status.previewPath,
       qaPath: status.qaPath,
       summaryPath: status.summaryPath,
@@ -2713,6 +2712,14 @@ async function readQaRiskCodes(qaPath: string): Promise<string[]> {
   }
 }
 
+async function readWorkspaceRiskCodes(filePath: string, qaPath: string): Promise<string[]> {
+  if (isLegacyVisioPath(filePath) && !isSemanticVisioPath(filePath)) {
+    return ['LEGACY_CONVERSION_REQUIRED'];
+  }
+
+  return readQaRiskCodes(qaPath);
+}
+
 function toWorkspaceReportMarkdown(
   generatedAt: string,
   workspaceRoot: string,
@@ -3122,6 +3129,9 @@ function getStatusRank(badge: string): number {
 }
 
 function resolveRiskOpenPath(item: WorkspaceReportItem): string {
+  if (item.riskCodes.includes('LEGACY_CONVERSION_REQUIRED')) {
+    return item.sourcePath;
+  }
   return existsSync(item.summaryPath) ? item.summaryPath : item.sourcePath;
 }
 
@@ -3149,6 +3159,11 @@ function openWorkspaceRiskDashboard(
     const targetPath = typeof message.path === 'string' ? message.path : undefined;
     if (message.command === 'openPath' && targetPath) {
       await openDashboardPath(targetPath);
+      return;
+    }
+
+    if (message.command === 'convertLegacy' && targetPath) {
+      await vscode.commands.executeCommand('aiFdeVsdxRadar.convertToModernVisio', vscode.Uri.file(targetPath));
       return;
     }
 
@@ -4372,6 +4387,9 @@ function toWorkspaceRiskDashboardHtml(
     function actions(item) {
       const wrapper = document.createElement('div');
       wrapper.className = 'row-actions';
+      if (item.riskCodes.includes('LEGACY_CONVERSION_REQUIRED')) {
+        wrapper.append(actionButton('Convert', item.sourcePath, 'convertLegacy'));
+      }
       wrapper.append(
         actionButton('Source', item.sourcePath),
         actionButton('QA', item.summaryPath),
@@ -4380,16 +4398,16 @@ function toWorkspaceRiskDashboardHtml(
       return wrapper;
     }
 
-    function actionButton(label, targetPath) {
+    function actionButton(label, targetPath, command) {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = label;
-      button.addEventListener('click', () => openPath(targetPath));
+      button.addEventListener('click', () => openPath(targetPath, command));
       return button;
     }
 
-    function openPath(targetPath) {
-      vscode.postMessage({ command: 'openPath', path: targetPath });
+    function openPath(targetPath, command) {
+      vscode.postMessage({ command: command || 'openPath', path: targetPath });
     }
 
     function cell(child) {

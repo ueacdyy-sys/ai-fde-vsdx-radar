@@ -46,6 +46,7 @@ export interface VsdxEditorShape {
   reason?: string;
   fill: string;
   line: string;
+  linePattern?: number;
   strokeWidth: number;
   x?: number;
   y?: number;
@@ -58,6 +59,8 @@ export interface VsdxEditorShape {
   endY?: number;
   imageDataUri?: string;
   geometryPath?: string;
+  beginArrow?: number;
+  endArrow?: number;
 }
 
 export interface VsdxEditorShapeUpdate {
@@ -177,13 +180,13 @@ export async function readVsdxDiagram(bytes: Buffer, sourceName: string): Promis
   if (formatSupport === 'legacy-binary') {
     return createUnsupportedVisioDiagram(
       sourceName,
-      'Legacy binary Visio files (.vsd/.vss/.vst) are recognized, but semantic preview and lightweight editing require a modern Visio package (.vsdx/.vsdm/.vssx/.vssm/.vstx/.vstm) or a Visio XML file (.vdx/.vsx/.vtx).'
+      'Legacy binary Visio files (.vsd/.vss/.vst) are recognized. Convert this file to a modern Visio package (.vsdx/.vssx/.vstx) to unlock semantic preview, zoom, text edits, shape dragging, and connector dragging.'
     );
   }
   if (formatSupport === 'legacy-opaque') {
     return createUnsupportedVisioDiagram(
       sourceName,
-      'This legacy Visio container is recognized, but semantic preview and lightweight editing require a modern Visio package (.vsdx/.vsdm/.vssx/.vssm/.vstx/.vstm) or a Visio XML file (.vdx/.vsx/.vtx).'
+      'This legacy Visio container is recognized. Convert it to a modern Visio package (.vsdx/.vssx/.vstx) to unlock semantic preview, zoom, text edits, shape dragging, and connector dragging.'
     );
   }
   if (formatSupport === 'legacy-xml') {
@@ -722,6 +725,9 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const masterShape = readMasterShapeFor(shape, context.masterShapes);
   const masterCells = toArray(masterShape?.Cell);
   const lineWeight = readCellNumber(cells, 'LineWeight') ?? readCellNumber(masterCells, 'LineWeight');
+  const linePattern = readCellNumber(cells, 'LinePattern') ?? readCellNumber(masterCells, 'LinePattern');
+  const beginArrow = readCellNumber(cells, 'BeginArrow') ?? readCellNumber(masterCells, 'BeginArrow');
+  const endArrow = readCellNumber(cells, 'EndArrow') ?? readCellNumber(masterCells, 'EndArrow');
   const angle = readCellNumber(cells, 'Angle') ?? readCellNumber(masterCells, 'Angle') ?? 0;
   const hasChildShapes = toArray(shape?.Shapes?.Shape).length > 0;
   const isConnector = isConnectorShape(shape);
@@ -736,6 +742,7 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     text,
     fill: readFillColor(cells, masterCells),
     line: readLineColor(cells, masterCells),
+    linePattern,
     strokeWidth: Math.max(0.015, lineWeight ?? 0.02)
   };
 
@@ -765,6 +772,8 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
       y: pinY !== undefined && height !== undefined ? pinY - height / 2 : undefined,
       width,
       height,
+      beginArrow,
+      endArrow,
       geometryPath
     };
   }

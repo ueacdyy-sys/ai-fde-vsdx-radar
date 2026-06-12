@@ -13,11 +13,13 @@ Visio Preview & QA Linter brings modern Microsoft Visio package review into VS C
 - Opens modern Visio package files (`.vsdx`, `.vsdm`, `.vssx`, `.vssm`, `.vstx`, `.vstm`) and Visio XML files (`.vdx`, `.vsx`, `.vtx`) with an interactive custom editor in VS Code.
 - Supports zoom, page switching, shape dragging, direct shape resizing, connector endpoint dragging, and lightweight text edits for supported shapes.
 - Keeps simple rotated shapes editable: they render with their stored angle, can be dragged or text-edited, and preserve `Angle` on save.
+- Renders connector direction and line semantics from Visio `BeginArrow`, `EndArrow`, and `LinePattern` cells.
 - Renders embedded pictures from page relationships, master relationships, and inline Visio XML image data when the file already carries that semantic image payload.
 - Exports Visio files to cached PNG or PDF previews through local Microsoft Visio automation.
 - Supports multi-page diagrams with one preview per page.
 - Parses modern Visio package XML and Visio XML drawings, then writes `.aifde/qa/*.qa.json` plus `.qa.md` summaries.
 - Recognizes legacy binary and opaque Visio files (`.vsd`, `.vss`, `.vst`, `.vdw`, `.vwi`, `.vsw`) and adds an explicit conversion command so they can become modern package files (`.vsdx`, `.vssx`, `.vstx`) before entering semantic QA and lightweight editing.
+- Includes all recognized Visio extensions in workspace reports and the risk dashboard; legacy files are marked as `LEGACY_CONVERSION_REQUIRED` and expose a conversion action instead of failing silently.
 - Flags common delivery risks: missing or stale previews, empty pages, duplicate Shape IDs, unlabeled shapes, low connector ratio, diagonal connectors, connectors crossing nodes, dangling connectors, overlapping shapes, page coverage issues, and out-of-bounds shapes.
 - Adds Explorer context menu commands for preview, QA, status, and artifact reveal actions.
 - Generates workspace reports, risk reports, due-risk reports, team review boards, calendar exports, and a webview dashboard for filtering and assigning diagram risks.
