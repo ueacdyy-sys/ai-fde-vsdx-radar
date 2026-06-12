@@ -2,6 +2,18 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.13 - 2026-06-12
+
+### Added
+
+- Added semantic rendering support for images stored through master relationships, so hand-authored Visio picture shapes that inherit image data from a master are no longer shown as empty frames.
+- Added semantic rendering support for inline Visio XML image payloads inside `ForeignData`, including base64 PNG/JPEG/GIF/BMP/WebP/SVG detection.
+- Added editor model regression coverage for master relationship images and Visio XML inline image data.
+
+### Changed
+
+- Image extraction now uses the same data-URI rendering path for page relationships, master relationships, and inline Visio XML image data without invoking Visio COM during normal open.
+
 ## 0.1.12 - 2026-06-12
 
 ### Added

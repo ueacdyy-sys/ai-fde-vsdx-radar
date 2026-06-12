@@ -108,9 +108,14 @@ interface PointTransform {
 
 interface EditorShapeContext {
   modelId: string;
-  masterShapes: Map<string, any>;
+  masterShapes: Map<string, MasterShapeEntry>;
   imageDataUriByRelId: Map<string, string>;
   readOnlyReason?: string;
+}
+
+interface MasterShapeEntry {
+  shape: any;
+  imageDataUriByRelId: Map<string, string>;
 }
 
 const legacyXmlCellNames = new Set([
@@ -314,8 +319,8 @@ function readLegacyXmlDiagram(bytes: Buffer, sourceName: string): VsdxEditorDiag
   };
 }
 
-function readLegacyXmlMasterShapes(document: any): Map<string, any> {
-  const masterShapes = new Map<string, any>();
+function readLegacyXmlMasterShapes(document: any): Map<string, MasterShapeEntry> {
+  const masterShapes = new Map<string, MasterShapeEntry>();
   for (const master of toArray(document?.Masters?.Master)) {
     const id = normalizedId(master?.ID);
     const firstShape = toArray(master?.Shapes?.Shape)[0] ?? master?.Shape;
@@ -324,9 +329,12 @@ function readLegacyXmlMasterShapes(document: any): Map<string, any> {
     }
 
     masterShapes.set(id, {
-      ...normalizeLegacyXmlShape(firstShape),
-      Name: master?.Name ?? firstShape?.Name,
-      NameU: master?.NameU ?? firstShape?.NameU
+      shape: {
+        ...normalizeLegacyXmlShape(firstShape),
+        Name: master?.Name ?? firstShape?.Name,
+        NameU: master?.NameU ?? firstShape?.NameU
+      },
+      imageDataUriByRelId: new Map()
     });
   }
   return masterShapes;
@@ -528,8 +536,9 @@ export function createUnsupportedVisioDiagram(sourceName: string, reason: string
   };
 }
 
-function createMasterPreviewPages(masterShapes: Map<string, any>): VsdxEditorPage[] {
-  return Array.from(masterShapes.entries()).map(([masterId, masterShape], index) => {
+function createMasterPreviewPages(masterShapes: Map<string, MasterShapeEntry>): VsdxEditorPage[] {
+  return Array.from(masterShapes.entries()).map(([masterId, masterEntry], index) => {
+    const masterShape = masterEntry.shape;
     const previewShape = normalizeMasterPreviewShape(masterShape, masterId);
     const cells = toArray(previewShape?.Cell);
     const width = validPageSize(readCellNumber(cells, 'Width'), 2);
@@ -538,7 +547,7 @@ function createMasterPreviewPages(masterShapes: Map<string, any>): VsdxEditorPag
     const pageHeight = Math.max(2.2, height + 1);
     const shapes = collectEditorShapes([previewShape], {
       masterShapes: new Map(),
-      imageDataUriByRelId: new Map(),
+      imageDataUriByRelId: masterEntry.imageDataUriByRelId,
       readOnlyReason: 'Stencil/template master shapes are shown for preview and are not written back as page shapes.'
     });
 
@@ -666,6 +675,7 @@ function collectEditorShapes(
 
     const pageShape = parentTransform ? transformShapeCoordinates(shape, parentTransform) : shape;
     const masterShape = readMasterShapeFor(shape, context.masterShapes);
+    const masterImageDataUriByRelId = readMasterImageDataUriByRelIdFor(shape, context.masterShapes);
     const editorShape = toEditorShape(pageShape, {
       ...context,
       modelId
@@ -689,6 +699,7 @@ function collectEditorShapes(
           masterChildShapes,
           {
             ...context,
+            imageDataUriByRelId: masterImageDataUriByRelId,
             readOnlyReason: 'Inherited master sub-shape is shown for preview and is not written back as a page shape.'
           },
           `${modelId}/master`,
@@ -715,7 +726,9 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const hasChildShapes = toArray(shape?.Shapes?.Shape).length > 0;
   const isConnector = isConnectorShape(shape);
   const text = readShapeText(shape) || readShapeText(masterShape);
-  const imageDataUri = readShapeImageDataUri(shape, context.imageDataUriByRelId);
+  const masterImageDataUriByRelId = readMasterImageDataUriByRelIdFor(shape, context.masterShapes);
+  const imageDataUri = readShapeImageDataUri(shape, context.imageDataUriByRelId)
+    ?? readShapeImageDataUri(masterShape, masterImageDataUriByRelId);
   const readOnlyReason = context.readOnlyReason;
   const base = {
     id,
@@ -1066,8 +1079,8 @@ async function readPageMetadata(zip: JSZip): Promise<Map<string, PageMetadata>> 
   return metadata;
 }
 
-async function readMasterShapes(zip: JSZip): Promise<Map<string, any>> {
-  const masterShapes = new Map<string, any>();
+async function readMasterShapes(zip: JSZip): Promise<Map<string, MasterShapeEntry>> {
+  const masterShapes = new Map<string, MasterShapeEntry>();
   const mastersFile = zip.file('visio/masters/masters.xml');
   const relsFile = zip.file('visio/masters/_rels/masters.xml.rels');
   if (!mastersFile || !relsFile) {
@@ -1091,21 +1104,29 @@ async function readMasterShapes(zip: JSZip): Promise<Map<string, any>> {
     const id = normalizedId(master?.ID);
     const relId = master?.Rel?.['r:id'] ?? master?.Rel?.id;
     const entry = typeof relId === 'string' ? targetById.get(relId) : undefined;
-    const masterFile = entry ? zip.file(entry) : undefined;
-    if (!id || !masterFile) {
+    if (!id || !entry) {
+      return undefined;
+    }
+
+    const masterFile = zip.file(entry);
+    if (!masterFile) {
       return undefined;
     }
 
     const parsed = xmlParser.parse(await masterFile.async('text'));
     const contents = parsed.MasterContents ?? parsed['MasterContents'];
     const shape = toArray(contents?.Shapes?.Shape)[0];
+    const imageDataUriByRelId = await readRelationshipImageDataUris(zip, entry);
     return shape
       ? {
         id,
-        shape: {
-        ...shape,
-        Name: master?.Name ?? shape?.Name,
-        NameU: master?.NameU ?? shape?.NameU
+        entry: {
+          shape: {
+            ...shape,
+            Name: master?.Name ?? shape?.Name,
+            NameU: master?.NameU ?? shape?.NameU
+          },
+          imageDataUriByRelId
         }
       }
       : undefined;
@@ -1113,7 +1134,7 @@ async function readMasterShapes(zip: JSZip): Promise<Map<string, any>> {
 
   for (const entry of masterEntries) {
     if (entry) {
-      masterShapes.set(entry.id, entry.shape);
+      masterShapes.set(entry.id, entry.entry);
     }
   }
 
@@ -1121,8 +1142,12 @@ async function readMasterShapes(zip: JSZip): Promise<Map<string, any>> {
 }
 
 async function readPageImageDataUris(zip: JSZip, pageEntry: string): Promise<Map<string, string>> {
+  return readRelationshipImageDataUris(zip, pageEntry);
+}
+
+async function readRelationshipImageDataUris(zip: JSZip, sourceEntry: string): Promise<Map<string, string>> {
   const images = new Map<string, string>();
-  const relsFile = zip.file(pageRelationshipEntry(pageEntry));
+  const relsFile = zip.file(relationshipEntry(sourceEntry));
   if (!relsFile) {
     return images;
   }
@@ -1133,7 +1158,7 @@ async function readPageImageDataUris(zip: JSZip, pageEntry: string): Promise<Map
       continue;
     }
 
-    const target = normalizePackageTarget(pageEntry, rel.Target);
+    const target = normalizePackageTarget(sourceEntry, rel.Target);
     const mimeType = mimeTypeForImageTarget(target);
     const isImageRel = String(rel?.Type ?? '').toLowerCase().includes('/image');
     if (!mimeType || !isImageRel) {
@@ -1164,8 +1189,8 @@ function normalizePackageTarget(sourceEntry: string, target: string): string {
   return path.posix.normalize(path.posix.join(path.posix.dirname(sourceEntry), normalizedTarget)).replace(/^\.\//, '');
 }
 
-function pageRelationshipEntry(pageEntry: string): string {
-  return `${path.posix.dirname(pageEntry)}/_rels/${path.posix.basename(pageEntry)}.rels`;
+function relationshipEntry(sourceEntry: string): string {
+  return `${path.posix.dirname(sourceEntry)}/_rels/${path.posix.basename(sourceEntry)}.rels`;
 }
 
 function mimeTypeForImageTarget(target: string): string | undefined {
@@ -1260,7 +1285,15 @@ function readCellFormula(cells: unknown[], name: string): string | undefined {
   return typeof cell?.F === 'string' && cell.F.trim().length > 0 ? cell.F : undefined;
 }
 
-function readMasterShapeFor(shape: any, masterShapes: Map<string, any>): any | undefined {
+function readMasterShapeFor(shape: any, masterShapes: Map<string, MasterShapeEntry>): any | undefined {
+  return readMasterEntryFor(shape, masterShapes)?.shape;
+}
+
+function readMasterImageDataUriByRelIdFor(shape: any, masterShapes: Map<string, MasterShapeEntry>): Map<string, string> {
+  return readMasterEntryFor(shape, masterShapes)?.imageDataUriByRelId ?? new Map();
+}
+
+function readMasterEntryFor(shape: any, masterShapes: Map<string, MasterShapeEntry>): MasterShapeEntry | undefined {
   const masterId = normalizedId(shape?.Master);
   return masterId ? masterShapes.get(masterId) : undefined;
 }
@@ -1275,6 +1308,140 @@ function readShapeImageDataUri(shape: any, imageDataUriByRelId: Map<string, stri
         return image;
       }
     }
+
+    const inlineImage = readInlineForeignImageDataUri(foreignData);
+    if (inlineImage) {
+      return inlineImage;
+    }
+  }
+  return undefined;
+}
+
+function readInlineForeignImageDataUri(foreignData: any): string | undefined {
+  const directDataUri = readDataUriPayload(foreignData);
+  if (directDataUri) {
+    return directDataUri;
+  }
+
+  const base64 = readForeignDataBase64Payload(foreignData);
+  if (!base64) {
+    return undefined;
+  }
+
+  const mimeType = mimeTypeForForeignData(foreignData) ?? inferMimeTypeFromBase64(base64);
+  return mimeType ? `data:${mimeType};base64,${base64}` : undefined;
+}
+
+function readDataUriPayload(value: unknown): string | undefined {
+  const text = readTextPayload(value);
+  if (!text) {
+    return undefined;
+  }
+
+  const match = text.trim().match(/^data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/=\s]+)$/i);
+  if (!match) {
+    return undefined;
+  }
+
+  const base64 = normalizeBase64(match[2]);
+  return base64 ? `data:${match[1].toLowerCase()};base64,${base64}` : undefined;
+}
+
+function readForeignDataBase64Payload(foreignData: any): string | undefined {
+  for (const candidate of [
+    foreignData?.Data,
+    foreignData?.ImageData,
+    foreignData?.Bitmap,
+    foreignData?.Value,
+    foreignData?.V,
+    foreignData?.['#text']
+  ]) {
+    const base64 = normalizeBase64(readTextPayload(candidate));
+    if (base64) {
+      return base64;
+    }
+  }
+  return undefined;
+}
+
+function readTextPayload(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const text = readTextPayload(item);
+      if (text) {
+        return text;
+      }
+    }
+    return undefined;
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    for (const key of ['#text', 'Data', 'ImageData', 'Value', 'V']) {
+      const text = readTextPayload(record[key]);
+      if (text) {
+        return text;
+      }
+    }
+  }
+  return undefined;
+}
+
+function normalizeBase64(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const compact = value.replace(/\s+/g, '');
+  if (compact.length < 12 || !/^[a-z0-9+/]+={0,2}$/i.test(compact)) {
+    return undefined;
+  }
+  return compact;
+}
+
+function mimeTypeForForeignData(foreignData: any): string | undefined {
+  const compression = String(foreignData?.CompressionType ?? foreignData?.Compression ?? '').toLowerCase();
+  if (compression.includes('png')) {
+    return 'image/png';
+  }
+  if (compression.includes('jpg') || compression.includes('jpeg')) {
+    return 'image/jpeg';
+  }
+  if (compression.includes('gif')) {
+    return 'image/gif';
+  }
+  if (compression.includes('bmp') || compression.includes('dib')) {
+    return 'image/bmp';
+  }
+  if (compression.includes('webp')) {
+    return 'image/webp';
+  }
+  if (compression.includes('svg')) {
+    return 'image/svg+xml';
+  }
+  return undefined;
+}
+
+function inferMimeTypeFromBase64(base64: string): string | undefined {
+  if (base64.startsWith('iVBORw0KGgo')) {
+    return 'image/png';
+  }
+  if (base64.startsWith('/9j/')) {
+    return 'image/jpeg';
+  }
+  if (base64.startsWith('R0lGOD')) {
+    return 'image/gif';
+  }
+  if (base64.startsWith('Qk')) {
+    return 'image/bmp';
+  }
+  if (base64.startsWith('PHN2Zy') || base64.startsWith('PD94bW')) {
+    return 'image/svg+xml';
   }
   return undefined;
 }

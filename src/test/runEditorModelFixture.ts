@@ -24,6 +24,8 @@ async function main(): Promise<void> {
   await verifiesConnectorGeometryRows();
   await verifiesMasterFallbackWhenPageGeometryIsIncomplete();
   await verifiesEmbeddedImageRelationship();
+  await verifiesMasterImageRelationship();
+  await verifiesLegacyXmlInlineImageData();
   verifiesLegacyConversionOutputPolicy();
   console.log('Editor model fixture checks passed.');
 }
@@ -817,6 +819,90 @@ async function verifiesEmbeddedImageRelationship(): Promise<void> {
     typeof shape.imageDataUri === 'string' && shape.imageDataUri.startsWith('data:image/png;base64,'),
     'expected image relationship to be exposed as a data URI'
   );
+}
+
+async function verifiesMasterImageRelationship(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/masters/masters.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<Masters xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <Master ID="8" NameU="PictureMaster"><Rel r:id="rIdMaster1"/></Master>
+</Masters>`);
+  zip.file('visio/masters/_rels/masters.xml.rels', `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdMaster1" Type="http://schemas.microsoft.com/visio/2010/relationships/master" Target="master1.xml"/>
+</Relationships>`);
+  zip.file('visio/masters/_rels/master1.xml.rels', `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdMasterImage1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/master-image1.png"/>
+</Relationships>`);
+  zip.file('visio/media/master-image1.png', tinyPngBuffer());
+  zip.file('visio/masters/master1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<MasterContents>
+  <Shapes>
+    <Shape ID="9" NameU="PictureMaster">
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <ForeignData ForeignType="Bitmap" CompressionType="PNG">
+        <Rel r:id="rIdMasterImage1" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>
+      </ForeignData>
+    </Shape>
+  </Shapes>
+</MasterContents>`);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="PictureMaster" Master="8">
+      <Cell N="PinX" V="3"/>
+      <Cell N="PinY" V="4"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'master-image-fixture.vsdx');
+  const shape = diagram.pages[0]?.shapes[0];
+  assert.ok(shape, 'expected master image instance to be parsed');
+  assert.ok(
+    typeof shape.imageDataUri === 'string' && shape.imageDataUri.startsWith('data:image/png;base64,'),
+    'expected image relationship from master rels to be exposed as a data URI'
+  );
+}
+
+async function verifiesLegacyXmlInlineImageData(): Promise<void> {
+  const source = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<VisioDocument>
+  <Pages>
+    <Page ID="1" Name="Inline image">
+      <PageSheet><PageProps><PageWidth>8</PageWidth><PageHeight>6</PageHeight></PageProps></PageSheet>
+      <Shapes>
+        <Shape ID="1" NameU="InlineBitmap">
+          <XForm><PinX>3</PinX><PinY>3</PinY><Width>2</Width><Height>1</Height></XForm>
+          <ForeignData ForeignType="Bitmap" CompressionType="PNG">
+            <Data>${tinyPngBase64()}</Data>
+          </ForeignData>
+        </Shape>
+      </Shapes>
+    </Page>
+  </Pages>
+</VisioDocument>`);
+
+  const diagram = await readVsdxDiagram(source, 'legacy-inline-image-fixture.vdx');
+  const shape = diagram.pages[0]?.shapes[0];
+  assert.ok(shape, 'expected legacy XML inline image to be parsed');
+  assert.ok(
+    typeof shape.imageDataUri === 'string' && shape.imageDataUri.startsWith('data:image/png;base64,'),
+    'expected inline legacy XML image data to be exposed as a data URI'
+  );
+}
+
+function tinyPngBuffer(): Buffer {
+  return Buffer.from(tinyPngBase64(), 'base64');
+}
+
+function tinyPngBase64(): string {
+  return 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
 }
 
 function addSinglePageMetadata(zip: JSZip): void {
