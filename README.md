@@ -16,7 +16,7 @@ Visio Preview & QA Linter brings modern Microsoft Visio package review into VS C
 - Keeps simple rotated and flipped shapes editable: they render with their stored `Angle`, `FlipX`, and `FlipY` transforms, can be dragged or text-edited, and preserve `Angle` on save.
 - Resolves Visio StyleSheet and master-shape inheritance for hand-authored files, so fill, patterned fill background, line, stroke width, line cap, line rounding, dashed line patterns, connector arrow, arrow size, shadow color, shadow blur, Geometry section paint visibility, and basic text style semantics render on the fast XML/ZIP path.
 - Renders connector direction, line transparency, and line semantics from Visio `BeginArrow`, `EndArrow`, `LineColorTrans`, and `LinePattern` cells, including modern package and legacy Visio XML files.
-- Renders basic text formatting from Visio `Color`, `Font`, `Size`, `Character.Style`, `Character.Pos`, `DblUnderline`, `Strikethru`, paragraph alignment, bullet text position, TextBlock margins, `TextBkgnd`, and `TextBkgndTrans` cells, including inherited formatting from styles and legacy Visio XML files.
+- Renders basic text formatting from Visio `Color`, `Font`, `Size`, `Character.Style`, `Character.Pos`, `DblUnderline`, `Strikethru`, paragraph alignment, paragraph indents, bullet text position, TextBlock margins, `TextBkgnd`, and `TextBkgndTrans` cells, including inherited formatting from styles and legacy Visio XML files.
 - Renders embedded pictures from page relationships, master relationships, and inline Visio XML image data when the file already carries that semantic image payload.
 - Exports Visio files to cached PNG or PDF previews through local Microsoft Visio automation.
 - Supports multi-page diagrams with one preview per page.

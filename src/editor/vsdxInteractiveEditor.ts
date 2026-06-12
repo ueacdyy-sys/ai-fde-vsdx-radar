@@ -1272,15 +1272,20 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
     }
 
     function resolveTextContentBox(shape, textBox) {
-      const margins = (shape.textStyle && shape.textStyle.margins) || {};
+      const style = shape.textStyle || {};
+      const margins = style.margins || {};
+      const indents = style.indents || {};
       const left = clamp(numberOr(margins.left, 0), 0, textBox.width / 2);
       const right = clamp(numberOr(margins.right, 0), 0, Math.max(0, textBox.width - left - 0.02));
       const top = clamp(numberOr(margins.top, 0), 0, textBox.height / 2);
       const bottom = clamp(numberOr(margins.bottom, 0), 0, Math.max(0, textBox.height - top - 0.02));
+      const innerWidth = Math.max(0.05, textBox.width - left - right);
+      const leftIndent = clamp(numberOr(indents.left, 0), 0, Math.max(0, innerWidth - 0.02));
+      const rightIndent = clamp(numberOr(indents.right, 0), 0, Math.max(0, innerWidth - leftIndent - 0.02));
       return {
-        x: textBox.x + left,
+        x: textBox.x + left + leftIndent,
         y: textBox.y + top,
-        width: Math.max(0.05, textBox.width - left - right),
+        width: Math.max(0.05, innerWidth - leftIndent - rightIndent),
         height: Math.max(0.05, textBox.height - top - bottom),
         angle: textBox.angle
       };
@@ -1339,11 +1344,17 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
 
     function textLineX(shape, textPosition, index) {
       const style = shape.textStyle || {};
-      if (index > 0 || style.horizontalAlign !== 'left') {
-        return textPosition.x;
+      const firstIndent = index === 0 ? numberOr(style.indents && style.indents.first, 0) : 0;
+      const bulletOffset = index === 0 && style.horizontalAlign === 'left'
+        ? Math.max(0, numberOr(style.textPosAfterBullet, 0))
+        : 0;
+      let offset = bulletOffset;
+      if (style.horizontalAlign === 'left') {
+        offset += firstIndent;
+      } else if (style.horizontalAlign === 'center') {
+        offset += firstIndent / 2;
       }
-      const offset = numberOr(style.textPosAfterBullet, 0);
-      if (offset <= 0) {
+      if (Math.abs(offset) <= 0.0001) {
         return textPosition.x;
       }
       return round4(textPosition.x + offset);

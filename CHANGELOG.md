@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.44 - 2026-06-12
+
+### Added
+
+- Added Visio paragraph indent metadata (`IndFirst`, `IndLeft`, `IndRight`) so labels can preserve first-line, left, and right paragraph indentation in SVG preview.
+- Preserves paragraph indent inheritance through direct shape cells, Paragraph sections, TextStyle StyleSheets, master-shape inheritance, formula cells, and legacy Visio XML files.
+- Added regression coverage for modern package direct/Paragraph/StyleSheet indents and legacy XML direct/TextStyle paragraph indents.
+
 ## 0.1.43 - 2026-06-12
 
 ### Added

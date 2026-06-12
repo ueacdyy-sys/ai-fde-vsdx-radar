@@ -114,9 +114,16 @@ export interface VsdxEditorTextStyle {
   horizontalAlign?: 'left' | 'center' | 'right';
   verticalAlign?: 'top' | 'middle' | 'bottom';
   textPosAfterBullet?: number;
+  indents?: VsdxEditorTextIndents;
   margins?: VsdxEditorTextMargins;
   background?: string;
   backgroundOpacity?: number;
+}
+
+export interface VsdxEditorTextIndents {
+  first?: number;
+  left?: number;
+  right?: number;
 }
 
 export interface VsdxEditorTextMargins {
@@ -256,6 +263,9 @@ const legacyXmlCellNames = new Set([
   'DoubleStrikethrough',
   'HAlign',
   'HorzAlign',
+  'IndFirst',
+  'IndLeft',
+  'IndRight',
   'VerticalAlign',
   'LeftMargin',
   'RightMargin',
@@ -343,6 +353,9 @@ const textStyleCellNames = new Set([
   'DoubleStrikethrough',
   'HAlign',
   'HorzAlign',
+  'IndFirst',
+  'IndLeft',
+  'IndRight',
   'VerticalAlign',
   'LeftMargin',
   'RightMargin',
@@ -1726,6 +1739,7 @@ function readTextStyle(
   const verticalAlign = readVerticalAlign(cells, refs);
   const textPosAfterBullet = readTextPositionCell(paragraphCells, 'TextPosAfterBullet', refs)
     ?? readTextPositionCell(cells, 'TextPosAfterBullet', refs);
+  const indents = readParagraphIndents(paragraphCells, cells, refs);
   const margins = readTextMargins(cells, refs);
   const background = readColorCell(cells, 'TextBkgnd');
   const backgroundOpacity = readOpacityCell(cells, 'TextBkgndTrans', refs);
@@ -1764,6 +1778,9 @@ function readTextStyle(
   }
   if (textPosAfterBullet !== undefined) {
     style.textPosAfterBullet = textPosAfterBullet;
+  }
+  if (indents) {
+    style.indents = indents;
   }
   if (margins) {
     style.margins = margins;
@@ -1853,6 +1870,44 @@ function readTextPositionCell(cells: unknown[], name: string, refs?: Map<string,
     return undefined;
   }
   return Math.max(0, value);
+}
+
+function readParagraphIndents(
+  paragraphCells: unknown[],
+  fallbackCells: unknown[],
+  refs?: Map<string, number>
+): VsdxEditorTextIndents | undefined {
+  const indents: VsdxEditorTextIndents = {};
+  const first = readParagraphIndentCell(paragraphCells, 'IndFirst', refs, true)
+    ?? readParagraphIndentCell(fallbackCells, 'IndFirst', refs, true);
+  const left = readParagraphIndentCell(paragraphCells, 'IndLeft', refs, false)
+    ?? readParagraphIndentCell(fallbackCells, 'IndLeft', refs, false);
+  const right = readParagraphIndentCell(paragraphCells, 'IndRight', refs, false)
+    ?? readParagraphIndentCell(fallbackCells, 'IndRight', refs, false);
+  if (first !== undefined) {
+    indents.first = first;
+  }
+  if (left !== undefined) {
+    indents.left = left;
+  }
+  if (right !== undefined) {
+    indents.right = right;
+  }
+  return Object.keys(indents).length > 0 ? indents : undefined;
+}
+
+function readParagraphIndentCell(
+  cells: unknown[],
+  name: string,
+  refs?: Map<string, number>,
+  allowNegative = false
+): number | undefined {
+  const cell = cells.find((candidate: any) => candidate?.N === name) as any;
+  const value = readCellNumber(cells, name, refs) ?? readUnitNumber(cell?.V) ?? readUnitNumber(cell?.F);
+  if (value === undefined || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return allowNegative ? value : Math.max(0, value);
 }
 
 function readTextMargins(cells: unknown[], refs?: Map<string, number>): VsdxEditorTextMargins | undefined {
