@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.39 - 2026-06-12
+
+### Added
+
+- Added Geometry section-level rendering for Visio `NoFill`, `NoLine`, and `NoShow` cells so multi-geometry shapes no longer lose subpath paint visibility semantics when compiled to SVG.
+- Preserves the existing compatibility `geometryPath` while exposing per-section `geometryPaths` for the interactive editor, including modern package and legacy Visio XML files.
+- Added regression coverage for modern package and legacy XML Geometry section paint flags.
+
 ## 0.1.38 - 2026-06-12
 
 ### Fixed

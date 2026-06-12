@@ -9,6 +9,7 @@ async function main(): Promise<void> {
   await verifiesMasterShapeGeometry();
   await verifiesCurvedGeometryRows();
   await verifiesAdvancedGeometryRows();
+  await verifiesGeometrySectionPaintFlags();
   await verifiesFormulaGeometryAndMasterRowInheritance();
   await verifiesFormulaOnlyShapeTransformCells();
   await verifiesTextBoxTransformCells();
@@ -26,6 +27,7 @@ async function main(): Promise<void> {
   await verifiesLegacyVisioBinaryGetsReadOnlyDiagram();
   await verifiesLegacyOpaqueVisioGetsReadOnlyDiagram();
   await verifiesLegacyXmlDrawingPreviewAndWriteBack();
+  await verifiesLegacyXmlGeometrySectionPaintFlags();
   await verifiesLegacyXmlStyleSheetInheritance();
   await verifiesLegacyXmlStencilFallbackPreview();
   await verifiesRotatedShapeStaysEditableAndPreservesAngle();
@@ -189,6 +191,47 @@ async function verifiesAdvancedGeometryRows(): Promise<void> {
   assert.ok(geometryPath.includes(' C '), 'expected relative cubic geometry to compile');
   assert.ok(geometryPath.includes(' A '), 'expected ellipse geometry to compile to SVG arcs');
   assert.ok(geometryPath.includes('L 3.5 1.5'), 'expected polyline formula vertices to be rendered');
+}
+
+async function verifiesGeometrySectionPaintFlags(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Multi Geometry">
+      <Cell N="PinX" V="3"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="3"/>
+      <Cell N="Height" V="2"/>
+      <Section N="Geometry" IX="0">
+        <Cell N="NoFill" V="1"/>
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" V="3"/><Cell N="Y" V="0"/></Row>
+      </Section>
+      <Section N="Geometry" IX="1">
+        <Cell N="NoLine" F="GUARD(1)"/>
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="2"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" V="3"/><Cell N="Y" V="2"/></Row>
+      </Section>
+      <Section N="Geometry" IX="2">
+        <Cell N="NoShow" V="1"/>
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="1"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" V="3"/><Cell N="Y" V="1"/></Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'geometry-flags-fixture.vsdx');
+  const shape = diagram.pages[0]?.shapes[0];
+  assert.ok(shape, 'expected geometry flag shape to be parsed');
+  assert.strictEqual(shape.geometryPaths?.length, 2, 'expected NoShow geometry section to be skipped');
+  assert.strictEqual(shape.geometryPaths?.[0]?.noFill, true, 'expected NoFill geometry section metadata');
+  assert.strictEqual(shape.geometryPaths?.[0]?.noLine, undefined, 'expected first geometry section line to remain visible');
+  assert.strictEqual(shape.geometryPaths?.[1]?.noFill, undefined, 'expected second geometry section fill to remain visible');
+  assert.strictEqual(shape.geometryPaths?.[1]?.noLine, true, 'expected NoLine geometry section metadata');
+  assert.ok(!shape.geometryPath?.includes('L 3 1'), 'expected hidden geometry section to be omitted from compatibility path');
 }
 
 async function verifiesFormulaGeometryAndMasterRowInheritance(): Promise<void> {
@@ -1258,6 +1301,52 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.ok(Math.abs((rereadShape?.height ?? 0) - 1.5) < 0.0001, 'expected legacy XML shape height to write back');
   assert.strictEqual(rereadConnector?.text, 'Moved connector');
   assert.ok(Math.abs((rereadConnector?.endX ?? 0) - 6) < 0.0001, 'expected legacy XML connector endpoint to write back');
+}
+
+async function verifiesLegacyXmlGeometrySectionPaintFlags(): Promise<void> {
+  const source = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<VisioDocument>
+  <Pages>
+    <Page ID="1" NameU="Legacy Geometry Flags">
+      <PageSheet><PageWidth>8</PageWidth><PageHeight>5</PageHeight></PageSheet>
+      <Shapes>
+        <Shape ID="20" NameU="Legacy Multi Geometry">
+          <XForm>
+            <PinX>3</PinX>
+            <PinY>2</PinY>
+            <Width>3</Width>
+            <Height>2</Height>
+            <LocPinX>1.5</LocPinX>
+            <LocPinY>1</LocPinY>
+          </XForm>
+          <Geom IX="0">
+            <NoFill>1</NoFill>
+            <MoveTo IX="1"><X>0</X><Y>0</Y></MoveTo>
+            <LineTo IX="2"><X>3</X><Y>0</Y></LineTo>
+          </Geom>
+          <Geom IX="1">
+            <NoLine F="GUARD(1)">0</NoLine>
+            <MoveTo IX="1"><X>0</X><Y>2</Y></MoveTo>
+            <LineTo IX="2"><X>3</X><Y>2</Y></LineTo>
+          </Geom>
+          <Geom IX="2">
+            <NoShow>1</NoShow>
+            <MoveTo IX="1"><X>0</X><Y>1</Y></MoveTo>
+            <LineTo IX="2"><X>3</X><Y>1</Y></LineTo>
+          </Geom>
+        </Shape>
+      </Shapes>
+    </Page>
+  </Pages>
+</VisioDocument>`, 'utf8');
+
+  const diagram = await readVsdxDiagram(source, 'legacy-geometry-flags.vdx');
+  const shape = diagram.pages[0]?.shapes[0];
+  assert.ok(shape, 'expected legacy XML geometry flag shape to be parsed');
+  assert.strictEqual(shape.geometryPaths?.length, 2, 'expected legacy XML NoShow geometry section to be skipped');
+  assert.strictEqual(shape.geometryPaths?.[0]?.noFill, true, 'expected legacy XML NoFill geometry metadata');
+  assert.strictEqual(shape.geometryPaths?.[1]?.noLine, true, 'expected legacy XML formula NoLine geometry metadata');
+  assert.ok(!shape.geometryPath?.includes('L 3 1'), 'expected legacy XML hidden geometry section to be omitted');
 }
 
 async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {

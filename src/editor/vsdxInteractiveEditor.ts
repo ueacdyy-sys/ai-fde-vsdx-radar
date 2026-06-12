@@ -981,19 +981,22 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         image.setAttribute('preserveAspectRatio', 'xMidYMid meet');
         group.append(image);
       }
-      if (shape.geometryPath) {
-        const path = document.createElementNS(svgNS, 'path');
-        path.classList.add('shape-outline');
-        path.setAttribute('d', shape.geometryPath);
-        path.setAttribute('transform', 'translate(' + x + ' ' + y + ')');
-        path.setAttribute('fill', shape.imageDataUri ? 'none' : shapeFill(shape));
-        path.setAttribute('stroke', safeColor(shape.line, '#586069'));
-        path.setAttribute('stroke-width', String(Math.max(0.012, numberOr(shape.strokeWidth, 0.02))));
-        path.setAttribute('stroke-linecap', lineCap(shape));
-        path.setAttribute('stroke-linejoin', 'round');
-        applyPaintOpacity(path, shape);
-        applyLinePattern(path, shape);
-        group.append(path);
+      const geometryPaths = geometryPathItems(shape);
+      if (geometryPaths.length > 0) {
+        geometryPaths.forEach(item => {
+          const path = document.createElementNS(svgNS, 'path');
+          path.classList.add('shape-outline');
+          path.setAttribute('d', item.path);
+          path.setAttribute('transform', 'translate(' + x + ' ' + y + ')');
+          path.setAttribute('fill', item.noFill || shape.imageDataUri ? 'none' : shapeFill(shape));
+          path.setAttribute('stroke', item.noLine ? 'none' : safeColor(shape.line, '#586069'));
+          path.setAttribute('stroke-width', String(Math.max(0.012, numberOr(shape.strokeWidth, 0.02))));
+          path.setAttribute('stroke-linecap', lineCap(shape));
+          path.setAttribute('stroke-linejoin', 'round');
+          applyPaintOpacity(path, shape);
+          applyLinePattern(path, shape);
+          group.append(path);
+        });
       } else {
         const rect = document.createElementNS(svgNS, 'rect');
         rect.classList.add('shape-outline');
@@ -1095,14 +1098,17 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         const cy = y + dy + height / 2;
         group.setAttribute('transform', 'translate(' + cx + ' ' + cy + ') scale(' + scale + ') translate(' + (-cx) + ' ' + (-cy) + ')');
       }
-      if (shape.geometryPath) {
-        const path = document.createElementNS(svgNS, 'path');
-        path.setAttribute('d', shape.geometryPath);
-        path.setAttribute('transform', 'translate(' + (x + dx) + ' ' + (y + dy) + ')');
-        path.setAttribute('fill', fill);
-        path.setAttribute('fill-opacity', String(opacity));
-        path.setAttribute('stroke', 'none');
-        group.append(path);
+      const geometryPaths = geometryPathItems(shape).filter(item => !item.noFill);
+      if (geometryPaths.length > 0) {
+        geometryPaths.forEach(item => {
+          const path = document.createElementNS(svgNS, 'path');
+          path.setAttribute('d', item.path);
+          path.setAttribute('transform', 'translate(' + (x + dx) + ' ' + (y + dy) + ')');
+          path.setAttribute('fill', fill);
+          path.setAttribute('fill-opacity', String(opacity));
+          path.setAttribute('stroke', 'none');
+          group.append(path);
+        });
         return group;
       }
 
@@ -1145,6 +1151,22 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         return 'url(#' + spec.id + ')';
       }
       return safeColor(shape.fill, '#ffffff');
+    }
+
+    function geometryPathItems(shape) {
+      if (Array.isArray(shape.geometryPaths) && shape.geometryPaths.length > 0) {
+        return shape.geometryPaths
+          .filter(item => item && typeof item.path === 'string' && item.path.length > 0)
+          .map(item => ({
+            path: item.path,
+            noFill: item.noFill === true,
+            noLine: item.noLine === true
+          }));
+      }
+      if (typeof shape.geometryPath === 'string' && shape.geometryPath.length > 0) {
+        return [{ path: shape.geometryPath, noFill: false, noLine: false }];
+      }
+      return [];
     }
 
     function fillPatternSpec(shape) {
@@ -1350,22 +1372,25 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       const x2 = numberOr(shape.endX, 0);
       const y2 = page.height - numberOr(shape.endY, 0);
       let connectorBody = null;
-      if (shape.geometryPath && shape.x !== undefined && shape.y !== undefined && shape.width !== undefined && shape.height !== undefined) {
+      const geometryPaths = geometryPathItems(shape).filter(item => !item.noLine);
+      if (geometryPaths.length > 0 && shape.x !== undefined && shape.y !== undefined && shape.width !== undefined && shape.height !== undefined) {
         const x = numberOr(shape.x, 0);
         const y = page.height - numberOr(shape.y, 0) - numberOr(shape.height, 0.6);
-        const path = document.createElementNS(svgNS, 'path');
-        path.setAttribute('d', shape.geometryPath);
-        path.setAttribute('transform', 'translate(' + x + ' ' + y + ')');
-        path.setAttribute('fill', 'none');
-        path.setAttribute('stroke', safeColor(shape.line, '#3b82f6'));
-        path.setAttribute('stroke-width', String(Math.max(0.018, numberOr(shape.strokeWidth, 0.025))));
-        path.setAttribute('stroke-linecap', lineCap(shape));
-        path.setAttribute('stroke-linejoin', 'round');
-        path.setAttribute('vector-effect', 'non-scaling-stroke');
-        applyPaintOpacity(path, shape);
-        applyConnectorStyle(path, shape);
-        group.append(path);
-        connectorBody = path;
+        geometryPaths.forEach(item => {
+          const path = document.createElementNS(svgNS, 'path');
+          path.setAttribute('d', item.path);
+          path.setAttribute('transform', 'translate(' + x + ' ' + y + ')');
+          path.setAttribute('fill', 'none');
+          path.setAttribute('stroke', safeColor(shape.line, '#3b82f6'));
+          path.setAttribute('stroke-width', String(Math.max(0.018, numberOr(shape.strokeWidth, 0.025))));
+          path.setAttribute('stroke-linecap', lineCap(shape));
+          path.setAttribute('stroke-linejoin', 'round');
+          path.setAttribute('vector-effect', 'non-scaling-stroke');
+          applyPaintOpacity(path, shape);
+          applyConnectorStyle(path, shape);
+          group.append(path);
+          connectorBody = connectorBody || path;
+        });
       } else {
         const line = document.createElementNS(svgNS, 'line');
         line.setAttribute('x1', String(x1));
@@ -1724,6 +1749,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
     function invalidateConnectorGeometry(shape) {
       if (shape.kind === 'connector') {
         shape.geometryPath = '';
+        shape.geometryPaths = [];
       }
     }
 

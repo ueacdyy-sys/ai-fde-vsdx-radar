@@ -67,12 +67,19 @@ export interface VsdxEditorShape {
   endY?: number;
   imageDataUri?: string;
   geometryPath?: string;
+  geometryPaths?: VsdxEditorGeometryPath[];
   textBox?: VsdxEditorTextBox;
   textStyle?: VsdxEditorTextStyle;
   beginArrow?: number;
   endArrow?: number;
   beginArrowSize?: number;
   endArrowSize?: number;
+}
+
+export interface VsdxEditorGeometryPath {
+  path: string;
+  noFill?: boolean;
+  noLine?: boolean;
 }
 
 export interface VsdxEditorShadow {
@@ -259,6 +266,7 @@ const legacyXmlCellNames = new Set([
 ]);
 
 const legacyXmlGeometryCellNames = new Set(['X', 'Y', 'A', 'B', 'C', 'D', 'E']);
+const legacyXmlGeometrySectionCellNames = new Set(['NoFill', 'NoLine', 'NoShow']);
 const legacyXmlGeometryRowNames = new Set([
   'MoveTo',
   'LineTo',
@@ -689,6 +697,7 @@ function legacyXmlGeometrySections(shape: any): any[] {
     return {
       N: 'Geometry',
       IX: String((geom as any)?.IX ?? index),
+      Cell: collectLegacyXmlCells(geom, legacyXmlGeometrySectionCellNames),
       Row: rows
     };
   }).filter(section => section.Row.length > 0);
@@ -976,9 +985,10 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     const pinY = readCellNumber(cells, 'PinY', shapeFormulaRefs);
     const width = readCellNumber(effectiveCells, 'Width', shapeFormulaRefs);
     const height = readCellNumber(effectiveCells, 'Height', shapeFormulaRefs);
-    const geometryPath = width !== undefined && height !== undefined
-      ? compileGeometryPath(shape, masterShape, width, height)
+    const geometryPaths = width !== undefined && height !== undefined
+      ? compileGeometryPaths(shape, masterShape, width, height)
       : undefined;
+    const geometryPath = geometryPaths?.map(item => item.path).join(' ');
     const editable = !readOnlyReason && [beginX, beginY, endX, endY].every(value => value !== undefined) && !hasChildShapes;
     return {
       ...base,
@@ -995,7 +1005,8 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
       height,
       beginArrow,
       endArrow,
-      geometryPath
+      geometryPath,
+      geometryPaths
     };
   }
 
@@ -1003,9 +1014,10 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const pinY = readCellNumber(cells, 'PinY', shapeFormulaRefs);
   const width = readCellNumber(effectiveCells, 'Width', shapeFormulaRefs);
   const height = readCellNumber(effectiveCells, 'Height', shapeFormulaRefs);
-  const geometryPath = width !== undefined && height !== undefined
-    ? compileGeometryPath(shape, masterShape, width, height)
+  const geometryPaths = width !== undefined && height !== undefined
+    ? compileGeometryPaths(shape, masterShape, width, height)
     : undefined;
+  const geometryPath = geometryPaths?.map(item => item.path).join(' ');
   const editable = !readOnlyReason
     && [pinX, pinY, width, height].every(value => value !== undefined)
     && !hasChildShapes;
@@ -1020,7 +1032,8 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     height,
     angle,
     imageDataUri,
-    geometryPath
+    geometryPath,
+    geometryPaths
   };
 }
 
@@ -2450,7 +2463,7 @@ function inferMimeTypeFromBase64(base64: string): string | undefined {
   return undefined;
 }
 
-function compileGeometryPath(shape: any, masterShape: any, targetWidth: number, targetHeight: number): string | undefined {
+function compileGeometryPaths(shape: any, masterShape: any, targetWidth: number, targetHeight: number): VsdxEditorGeometryPath[] | undefined {
   const candidates = [
     ...mergedGeometrySourcesFor(shape, masterShape, targetWidth, targetHeight),
     ...geometrySourcesFor(shape),
@@ -2458,20 +2471,20 @@ function compileGeometryPath(shape: any, masterShape: any, targetWidth: number, 
   ];
 
   for (const source of candidates) {
-    const pathData = compileGeometrySource(source, targetWidth, targetHeight);
-    if (pathData) {
-      return pathData;
+    const paths = compileGeometrySource(source, targetWidth, targetHeight);
+    if (paths.length > 0) {
+      return paths;
     }
   }
 
   return undefined;
 }
 
-function compileGeometrySource(source: GeometrySource, targetWidth: number, targetHeight: number): string | undefined {
+function compileGeometrySource(source: GeometrySource, targetWidth: number, targetHeight: number): VsdxEditorGeometryPath[] {
   const sourceWidth = source.sourceWidth ?? readCellNumber(source.cells, 'Width') ?? targetWidth;
   const sourceHeight = source.sourceHeight ?? readCellNumber(source.cells, 'Height') ?? targetHeight;
   if (sourceWidth <= 0 || sourceHeight <= 0 || targetWidth <= 0 || targetHeight <= 0) {
-    return undefined;
+    return [];
   }
 
   const context: GeometryContext = {
@@ -2484,11 +2497,16 @@ function compileGeometrySource(source: GeometrySource, targetWidth: number, targ
     scaleAverage: (Math.abs(targetWidth / sourceWidth) + Math.abs(targetHeight / sourceHeight)) / 2,
     refs: buildFormulaRefs(source, sourceWidth, sourceHeight)
   };
-  const commands: string[] = [];
+  const paths: VsdxEditorGeometryPath[] = [];
 
   for (const section of source.sections) {
+    const sectionCells = toArray(section?.Cell);
+    if (readGeometrySectionFlag(sectionCells, 'NoShow', context)) {
+      continue;
+    }
     let firstPoint: Point | undefined;
     let lastPoint: Point | undefined;
+    const commands: string[] = [];
 
     for (const row of toArray(section?.Row)) {
       if (String(row?.Del ?? '') === '1') {
@@ -2514,12 +2532,16 @@ function compileGeometrySource(source: GeometrySource, targetWidth: number, targ
     if (firstPoint && lastPoint && samePoint(firstPoint, lastPoint) && commands[commands.length - 1] !== 'Z') {
       commands.push('Z');
     }
+    if (commands.length >= 2) {
+      paths.push({
+        path: commands.join(' '),
+        noFill: readGeometrySectionFlag(sectionCells, 'NoFill', context) || undefined,
+        noLine: readGeometrySectionFlag(sectionCells, 'NoLine', context) || undefined
+      });
+    }
   }
 
-  if (commands.length < 2) {
-    return undefined;
-  }
-  return commands.join(' ');
+  return paths;
 }
 
 function compileGeometryRow(
@@ -2818,6 +2840,11 @@ function readGeometryCellNumber(cells: any[], name: string, context: GeometryCon
   }
   const value = Number(cell.V);
   return Number.isFinite(value) ? value : undefined;
+}
+
+function readGeometrySectionFlag(cells: any[], name: string, context: GeometryContext): boolean {
+  const value = readGeometryCellNumber(cells, name, context);
+  return value !== undefined && value !== 0;
 }
 
 function readGeometryPoint(cells: any[], context: GeometryContext, relative: boolean, fallback?: Point): Point | undefined {
