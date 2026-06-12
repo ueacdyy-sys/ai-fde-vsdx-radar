@@ -485,6 +485,7 @@ async function verifiesRichTextWriteBackPreservesFormattingMarkers(): Promise<vo
   const updatedZip = await JSZip.loadAsync(updatedBytes);
   const pageXml = await updatedZip.file('visio/pages/page1.xml')?.async('text');
   assert.ok(pageXml, 'expected updated page XML');
+  assert.strictEqual(countXmlDeclarations(pageXml), 1, 'expected updated modern page XML to contain one XML declaration');
   assert.ok(pageXml.includes('<cp IX="0"'), 'expected character formatting marker to remain');
   assert.ok(pageXml.includes('<pp IX="0"'), 'expected paragraph formatting marker to remain');
   assert.ok(pageXml.includes('<tp IX="0"'), 'expected tab formatting marker to remain');
@@ -685,6 +686,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   });
 
   const updatedBytes = await writeVsdxDiagram(source, updated);
+  assert.strictEqual(countXmlDeclarations(updatedBytes.toString('utf8')), 1, 'expected legacy XML write-back to contain one XML declaration');
   const reread = await readVsdxDiagram(updatedBytes, 'legacy-xml-fixture.vdx');
   const rereadShape = reread.pages[0]?.shapes.find(candidate => candidate.id === '10');
   const rereadConnector = reread.pages[0]?.shapes.find(candidate => candidate.id === '11');
@@ -1338,6 +1340,10 @@ function addSinglePageMetadata(zip: JSZip): void {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdPage1" Type="http://schemas.microsoft.com/visio/2010/relationships/page" Target="page1.xml"/>
 </Relationships>`);
+}
+
+function countXmlDeclarations(xml: string): number {
+  return xml.match(/<\?xml\b/gi)?.length ?? 0;
 }
 
 main().catch(error => {

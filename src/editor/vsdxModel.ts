@@ -678,8 +678,7 @@ export async function writeVsdxDiagram(sourceBytes: Buffer, diagram: VsdxEditorD
     const shapes = toArray(pageContents?.Shapes?.Shape);
     const updateById = new Map(page.shapes.map(shape => [shape.id, shape]));
     applyShapeUpdates(shapes, updateById);
-    const body = xmlBuilder.build(parsed);
-    zip.file(entry, `<?xml version="1.0" encoding="UTF-8"?>\n${body}`);
+    zip.file(entry, buildXmlDocument(parsed));
   }
 
   return zip.generateAsync({
@@ -950,8 +949,19 @@ function writeLegacyXmlDiagram(sourceBytes: Buffer, diagram: VsdxEditorDiagram):
     applyLegacyXmlShapeUpdates(toArray(page?.Shapes?.Shape), updateById);
   });
 
-  const body = xmlBuilder.build(parsed);
-  return Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>\n${body}`, 'utf8');
+  return Buffer.from(buildXmlDocument(parsed), 'utf8');
+}
+
+function buildXmlDocument(parsed: any): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>\n${stripLeadingXmlDeclarations(xmlBuilder.build(parsed))}`;
+}
+
+function stripLeadingXmlDeclarations(xml: string): string {
+  let body = xml.replace(/^\uFEFF/, '').trimStart();
+  while (/^<\?xml\b/i.test(body)) {
+    body = body.replace(/^<\?xml[\s\S]*?\?>\s*/i, '');
+  }
+  return body;
 }
 
 function applyShapeUpdate(shape: any, update: VsdxEditorShape, parentTransform?: PointTransform): void {

@@ -2,6 +2,16 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.17 - 2026-06-12
+
+### Fixed
+
+- Fixed XML write-back so modern package page XML and Visio XML (`.vdx`, `.vsx`, `.vtx`) saves emit a single XML declaration instead of duplicating the original parser-preserved declaration.
+
+### Added
+
+- Added editor model regression coverage for XML declaration de-duplication on both modern package page saves and legacy Visio XML saves.
+
 ## 0.1.16 - 2026-06-12
 
 ### Fixed
