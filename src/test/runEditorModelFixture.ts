@@ -14,6 +14,7 @@ async function main(): Promise<void> {
   await verifiesColorFormulaAndNoPaint();
   await verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle();
   await verifiesMasterChildShapeExpansion();
+  await verifiesMultiRootMasterShapeExpansion();
   await verifiesStencilMasterFallbackPreview();
   await verifiesLegacyVisioBinaryGetsReadOnlyDiagram();
   await verifiesLegacyOpaqueVisioGetsReadOnlyDiagram();
@@ -520,6 +521,66 @@ async function verifiesMasterChildShapeExpansion(): Promise<void> {
   assert.ok(Math.abs((child.y ?? 0) - 4.75) < 0.0001, 'expected child y to be scaled into page coordinates');
   assert.ok(Math.abs((child.width ?? 0) - 1) < 0.0001, 'expected child width to be scaled');
   assert.ok(Math.abs((child.height ?? 0) - 0.5) < 0.0001, 'expected child height to be scaled');
+}
+
+async function verifiesMultiRootMasterShapeExpansion(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/masters/masters.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<Masters xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <Master ID="12" NameU="MultiRoot"><Rel r:id="rId1"/></Master>
+</Masters>`);
+  zip.file('visio/masters/_rels/masters.xml.rels', `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.microsoft.com/visio/2010/relationships/master" Target="master1.xml"/>
+</Relationships>`);
+  zip.file('visio/masters/master1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<MasterContents>
+  <Shapes>
+    <Shape ID="5" NameU="Base">
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Section N="Geometry" IX="0">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" V="2"/><Cell N="Y" V="1"/></Row>
+      </Section>
+    </Shape>
+    <Shape ID="6" NameU="Badge">
+      <Cell N="PinX" V="1.5"/>
+      <Cell N="PinY" V="0.75"/>
+      <Cell N="Width" V="0.4"/>
+      <Cell N="Height" V="0.2"/>
+      <Text>Badge</Text>
+      <Section N="Geometry" IX="0">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" V="0.4"/><Cell N="Y" V="0.2"/></Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</MasterContents>`);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="MultiRoot" Master="12">
+      <Cell N="PinX" V="5"/>
+      <Cell N="PinY" V="4"/>
+      <Cell N="Width" V="4"/>
+      <Cell N="Height" V="2"/>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'multi-root-master-fixture.vsdx');
+  const base = diagram.pages[0]?.shapes.find(shape => shape.id === '1');
+  const badge = diagram.pages[0]?.shapes.find(shape => shape.id === '1/master/6');
+  assert.ok(base, 'expected master instance base shape to be parsed');
+  assert.ok(badge, 'expected second top-level master shape to be expanded');
+  assert.strictEqual(badge.text, 'Badge');
+  assert.strictEqual(badge.editable, false);
+  assert.ok(Math.abs((badge.x ?? 0) - 5.6) < 0.0001, 'expected multi-root badge x to scale into page coordinates');
+  assert.ok(Math.abs((badge.y ?? 0) - 4.3) < 0.0001, 'expected multi-root badge y to scale into page coordinates');
+  assert.ok(Math.abs((badge.width ?? 0) - 0.8) < 0.0001, 'expected multi-root badge width to scale');
+  assert.ok(Math.abs((badge.height ?? 0) - 0.4) < 0.0001, 'expected multi-root badge height to scale');
 }
 
 async function verifiesRichTextWriteBackPreservesFormattingMarkers(): Promise<void> {

@@ -121,6 +121,7 @@ interface EditorShapeContext {
 
 interface MasterShapeEntry {
   shape: any;
+  shapes: any[];
   imageDataUriByRelId: Map<string, string>;
 }
 
@@ -412,6 +413,7 @@ function readLegacyXmlMasterShapes(document: any): Map<string, MasterShapeEntry>
         Name: master?.Name ?? firstShape?.Name,
         NameU: master?.NameU ?? firstShape?.NameU
       },
+      shapes: toArray(master?.Shapes?.Shape).map(normalizeLegacyXmlShape),
       imageDataUriByRelId: new Map()
     });
   }
@@ -752,8 +754,9 @@ function collectEditorShapes(
     }
 
     const pageShape = parentTransform ? transformShapeCoordinates(shape, parentTransform) : shape;
-    const masterShape = readMasterShapeFor(shape, context.masterShapes);
-    const masterImageDataUriByRelId = readMasterImageDataUriByRelIdFor(shape, context.masterShapes);
+    const masterEntry = readMasterEntryFor(shape, context.masterShapes);
+    const masterShape = masterEntry?.shape;
+    const masterImageDataUriByRelId = masterEntry?.imageDataUriByRelId ?? new Map();
     const editorShape = toEditorShape(pageShape, {
       ...context,
       modelId
@@ -769,7 +772,7 @@ function collectEditorShapes(
       return;
     }
 
-    const masterChildShapes = toArray(masterShape?.Shapes?.Shape);
+    const masterChildShapes = masterEntry ? inheritedMasterPreviewShapes(masterEntry) : [];
     if (masterChildShapes.length > 0) {
       const masterTransform = createMasterToPageTransform(pageShape, masterShape);
       if (masterTransform) {
@@ -1284,7 +1287,8 @@ async function readMasterShapes(zip: JSZip): Promise<Map<string, MasterShapeEntr
 
     const parsed = xmlParser.parse(await masterFile.async('text'));
     const contents = parsed.MasterContents ?? parsed['MasterContents'];
-    const shape = toArray(contents?.Shapes?.Shape)[0];
+    const shapes = toArray(contents?.Shapes?.Shape);
+    const shape = shapes[0];
     const imageDataUriByRelId = await readRelationshipImageDataUris(zip, entry);
     return shape
       ? {
@@ -1295,6 +1299,13 @@ async function readMasterShapes(zip: JSZip): Promise<Map<string, MasterShapeEntr
             Name: master?.Name ?? shape?.Name,
             NameU: master?.NameU ?? shape?.NameU
           },
+          shapes: shapes.map((candidate, index) => index === 0
+            ? {
+              ...candidate,
+              Name: master?.Name ?? candidate?.Name,
+              NameU: master?.NameU ?? candidate?.NameU
+            }
+            : candidate),
           imageDataUriByRelId
         }
       }
@@ -1687,6 +1698,13 @@ function isMeaningfulEffectiveCell(cell: any): boolean {
 
 function readMasterShapeFor(shape: any, masterShapes: Map<string, MasterShapeEntry>): any | undefined {
   return readMasterEntryFor(shape, masterShapes)?.shape;
+}
+
+function inheritedMasterPreviewShapes(masterEntry: MasterShapeEntry): any[] {
+  return [
+    ...toArray(masterEntry.shape?.Shapes?.Shape),
+    ...masterEntry.shapes.slice(1)
+  ];
 }
 
 function readMasterImageDataUriByRelIdFor(shape: any, masterShapes: Map<string, MasterShapeEntry>): Map<string, string> {

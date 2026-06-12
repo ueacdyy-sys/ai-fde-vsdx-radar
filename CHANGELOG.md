@@ -2,6 +2,17 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.20 - 2026-06-12
+
+### Fixed
+
+- Fixed semantic preview for composite Visio masters that contain multiple top-level master shapes; inherited master content is no longer limited to the first top-level shape.
+- Page instances now expand additional top-level master shapes as read-only semantic preview overlays, preserving lightweight editing for the page-owned instance while showing the inherited visual content.
+
+### Added
+
+- Added editor model regression coverage for multi-root master expansion and scaled page-coordinate placement.
+
 ## 0.1.19 - 2026-06-12
 
 ### Fixed
