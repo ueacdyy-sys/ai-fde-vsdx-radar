@@ -2,6 +2,21 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.12 - 2026-06-12
+
+### Added
+
+- Added `AI-FDE: 转换旧 Visio 为现代格式 / Convert Legacy Visio to Modern Package` for explicit conversion of `.vsd`, `.vss`, `.vst`, `.vdw`, `.vwi`, and `.vsw` files through local Microsoft Visio COM automation.
+- Added safe converted-output naming beside the source file: `.vsd -> .converted.vsdx`, `.vss -> .converted.vssx`, `.vst -> .converted.vstx`, with automatic `-2`, `-3`, and timestamp fallbacks instead of overwriting existing files.
+- Added `aiFdeVsdxRadar.convertTimeoutMs` so legacy conversion can have its own timeout without changing normal preview export behavior.
+- Added regression coverage for legacy conversion extension mapping and non-overwrite output naming.
+- Added a real Visio COM conversion smoke test for generating a legacy `.vsd`, converting it to `.vsdx`, and checking `visio/pages/page*.xml`.
+
+### Changed
+
+- Legacy files now show conversion as the primary Explorer action, while semantic Visio files keep the direct interactive editor action.
+- Legacy warning text now points users to the explicit conversion command before semantic preview and lightweight editing.
+
 ## 0.1.11 - 2026-06-12
 
 ### Added

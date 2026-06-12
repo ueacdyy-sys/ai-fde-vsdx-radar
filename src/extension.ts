@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import { getRadarConfig } from './config';
 import { getPreviewFreshness, isPreviewFresh, loadCacheIndex, saveCacheIndex, updatePreviewRecord } from './cache/cacheIndex';
 import { exportVisioPreview } from './exporter/visioExporter';
+import { convertVisioToModernPackage, resolveModernVisioConversionOutputPath } from './exporter/visioConverter';
 import { analyzeVsdx } from './qa/vsdxParser';
 import { toQaSummaryMarkdown } from './qa/reporter';
 import {
@@ -26,7 +27,7 @@ import {
   toPreviewFreshnessReasonKeys,
   type PreviewFreshnessSummaryItem
 } from './previewFreshnessSummary';
-import { PreviewExportResult, QaResult, RadarConfig } from './types';
+import { PreviewExportResult, QaResult, RadarConfig, VisioConvertResult } from './types';
 import { interactiveEditorViewType, VsdxInteractiveEditorProvider } from './editor/vsdxInteractiveEditor';
 
 let output: vscode.OutputChannel;
@@ -283,6 +284,7 @@ const radarConfigKeys: Array<keyof RadarConfig> = [
   'qaPreset',
   'autoExportOnSave',
   'exportTimeoutMs',
+  'convertTimeoutMs',
   'shapeDensityWarningThreshold',
   'connectorRatioWarningThreshold',
   'pageCoverageLowWarningThreshold',
@@ -337,6 +339,33 @@ export function activate(context: vscode.ExtensionContext): void {
       await vscode.commands.executeCommand(
         'vscode.openWith',
         vscode.Uri.file(filePath),
+        interactiveEditorViewType
+      );
+    });
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand('aiFdeVsdxRadar.convertToModernVisio', async (uri?: vscode.Uri) => {
+    await runSafely(async () => {
+      const filePath = await resolveConvertibleLegacyPath(uri);
+      if (!filePath) {
+        return;
+      }
+
+      const result = await withProgress(
+        'Converting legacy Visio file',
+        () => convertLegacyVisioForFile(context.extensionPath, filePath)
+      );
+      reportConversion(result);
+      decorations.refresh(vscode.Uri.file(filePath));
+      if (!result.success) {
+        throw new Error(result.error ?? 'Legacy Visio conversion failed.');
+      }
+
+      const convertedUri = vscode.Uri.file(result.outputPath);
+      decorations.refresh(convertedUri);
+      await vscode.commands.executeCommand(
+        'vscode.openWith',
+        convertedUri,
         interactiveEditorViewType
       );
     });
@@ -771,10 +800,53 @@ async function resolveTargetPath(uri?: vscode.Uri, options: { allowLegacy?: bool
   return selectedPath;
 }
 
+async function resolveConvertibleLegacyPath(uri?: vscode.Uri): Promise<string | undefined> {
+  if (uri?.fsPath && isConvertibleLegacyVisioPath(uri.fsPath)) {
+    return uri.fsPath;
+  }
+  if (uri?.fsPath && isSemanticVisioPath(uri.fsPath)) {
+    await vscode.window.showInformationMessage(
+      'AI-FDE VSDX Radar: this file is already on the semantic preview/edit path and does not need legacy conversion.'
+    );
+    return undefined;
+  }
+
+  const selected = await vscode.window.showOpenDialog({
+    canSelectFiles: true,
+    canSelectFolders: false,
+    canSelectMany: false,
+    filters: {
+      'Legacy Visio files': ['vsd', 'vss', 'vst', 'vdw', 'vwi', 'vsw']
+    }
+  });
+
+  const selectedPath = selected?.[0]?.fsPath;
+  if (!selectedPath) {
+    return undefined;
+  }
+  if (!isConvertibleLegacyVisioPath(selectedPath)) {
+    await vscode.window.showWarningMessage(
+      'AI-FDE VSDX Radar: select a legacy Visio file (.vsd/.vss/.vst/.vdw/.vwi/.vsw) to convert.'
+    );
+    return undefined;
+  }
+  return selectedPath;
+}
+
+function isConvertibleLegacyVisioPath(filePath: string): boolean {
+  return isLegacyVisioPath(filePath) && !isSemanticVisioPath(filePath);
+}
+
 async function showLegacyVisioWarning(): Promise<void> {
   await vscode.window.showWarningMessage(
-    'AI-FDE VSDX Radar: this legacy Visio file cannot be semantically QA-checked or edited yet. Convert it to a modern Visio package (.vsdx/.vsdm/.vssx/.vssm/.vstx/.vstm) or Visio XML (.vdx/.vsx/.vtx) for semantic preview and lightweight editing.'
+    'AI-FDE VSDX Radar: this legacy Visio file cannot be semantically QA-checked or edited directly. Use "AI-FDE: 转换旧 Visio 为现代格式 / Convert Legacy Visio to Modern Package" first, then open the converted .vsdx/.vssx/.vstx file for semantic preview and lightweight editing.'
   );
+}
+
+async function convertLegacyVisioForFile(extensionRoot: string, filePath: string): Promise<VisioConvertResult> {
+  const config = getRadarConfig();
+  const outputPath = resolveModernVisioConversionOutputPath(filePath);
+  return convertVisioToModernPackage(extensionRoot, filePath, outputPath, config);
 }
 
 async function exportPreviewForFile(extensionRoot: string, filePath: string): Promise<PreviewExportResult> {
@@ -2084,6 +2156,7 @@ function isValidRadarConfigValue(key: keyof RadarConfig, value: unknown): value 
     case 'enableShapeOverlapWarning':
       return typeof value === 'boolean';
     case 'exportTimeoutMs':
+    case 'convertTimeoutMs':
     case 'shapeDensityWarningThreshold':
       return typeof value === 'number' && Number.isFinite(value) && value >= 1;
     case 'connectorRatioWarningThreshold':
@@ -4633,6 +4706,24 @@ function reportExport(result: PreviewExportResult): void {
   }
   if (result.outputPaths?.length) {
     output.appendLine(`  outputPaths=${result.outputPaths.join('; ')}`);
+  }
+  if (result.durationMs !== undefined) {
+    output.appendLine(`  durationMs=${result.durationMs}`);
+  }
+  if (!result.success && result.error) {
+    output.appendLine(`  error=${result.error}`);
+  }
+}
+
+function reportConversion(result: VisioConvertResult): void {
+  const label = result.success ? 'converted' : 'failed';
+  output.appendLine(`[convert:${label}] ${path.basename(result.inputPath)} -> ${result.outputPath}`);
+  output.appendLine(`  outputFormat=${result.outputFormat}`);
+  if (result.bytes !== undefined) {
+    output.appendLine(`  bytes=${result.bytes}`);
+  }
+  if (result.pageCount !== undefined) {
+    output.appendLine(`  pageCount=${result.pageCount}`);
   }
   if (result.durationMs !== undefined) {
     output.appendLine(`  durationMs=${result.durationMs}`);

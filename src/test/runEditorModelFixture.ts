@@ -1,7 +1,9 @@
 import * as assert from 'assert';
+import * as path from 'path';
 import JSZip from 'jszip';
 
 import { readVsdxDiagram, replaceShapeInDiagram, writeVsdxDiagram } from '../editor/vsdxModel';
+import { getModernVisioConversionExtension, resolveModernVisioConversionOutputPath } from '../exporter/visioConverter';
 
 async function main(): Promise<void> {
   await verifiesMasterShapeGeometry();
@@ -22,7 +24,25 @@ async function main(): Promise<void> {
   await verifiesConnectorGeometryRows();
   await verifiesMasterFallbackWhenPageGeometryIsIncomplete();
   await verifiesEmbeddedImageRelationship();
+  verifiesLegacyConversionOutputPolicy();
   console.log('Editor model fixture checks passed.');
+}
+
+function verifiesLegacyConversionOutputPolicy(): void {
+  assert.strictEqual(getModernVisioConversionExtension('diagram.vsd'), '.vsdx');
+  assert.strictEqual(getModernVisioConversionExtension('stencil.vss'), '.vssx');
+  assert.strictEqual(getModernVisioConversionExtension('template.vst'), '.vstx');
+  assert.strictEqual(getModernVisioConversionExtension('web-drawing.vdw'), '.vsdx');
+
+  const source = path.join('C:\\work', 'diagram.vsd');
+  assert.strictEqual(
+    resolveModernVisioConversionOutputPath(source, () => false),
+    path.join('C:\\work', 'diagram.converted.vsdx')
+  );
+  assert.strictEqual(
+    resolveModernVisioConversionOutputPath(source, candidate => candidate.endsWith('diagram.converted.vsdx')),
+    path.join('C:\\work', 'diagram.converted-2.vsdx')
+  );
 }
 
 async function verifiesMasterShapeGeometry(): Promise<void> {

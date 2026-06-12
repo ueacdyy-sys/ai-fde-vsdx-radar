@@ -10,6 +10,7 @@ export function getRadarConfig(): RadarConfig {
     qaPreset: cfg.get<QaPreset>('qaPreset', 'custom'),
     autoExportOnSave: cfg.get<boolean>('autoExportOnSave', false),
     exportTimeoutMs: cfg.get<number>('exportTimeoutMs', 120000),
+    convertTimeoutMs: cfg.get<number>('convertTimeoutMs', 300000),
     shapeDensityWarningThreshold: cfg.get<number>('shapeDensityWarningThreshold', 80),
     connectorRatioWarningThreshold: cfg.get<number>('connectorRatioWarningThreshold', 0.25),
     pageCoverageLowWarningThreshold: cfg.get<number>('pageCoverageLowWarningThreshold', 0.02),

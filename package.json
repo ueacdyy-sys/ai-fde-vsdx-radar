@@ -2,7 +2,7 @@
   "name": "ai-fde-vsdx-radar",
   "displayName": "Visio Preview & QA Linter",
   "description": "在 VS Code 中预览、轻量编辑和 QA Microsoft Visio 文件。",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "publisher": "ai-fde-lab",
   "license": "SEE LICENSE IN LICENSE.txt",
   "author": {
@@ -63,6 +63,7 @@
   "activationEvents": [
     "onCustomEditor:aiFdeVsdxRadar.interactiveEditor",
     "onCommand:aiFdeVsdxRadar.openInteractiveEditor",
+    "onCommand:aiFdeVsdxRadar.convertToModernVisio",
     "onCommand:aiFdeVsdxRadar.exportPreview",
     "onCommand:aiFdeVsdxRadar.runQa",
     "onCommand:aiFdeVsdxRadar.exportAndQa",
@@ -106,6 +107,7 @@
     "package": "npm run marketplace:assets && npm run marketplace:check && vsce package --allow-missing-repository --no-dependencies",
     "qa:evidence": "npm run compile && node ./dist/test/generateQaEvidence.js",
     "smoke:visio": "pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -STA -File ./scripts/smoke-visio-export.ps1",
+    "smoke:visio:convert": "pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -STA -File ./scripts/smoke-visio-convert.ps1",
     "smoke:visio:multipage": "pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -STA -File ./scripts/smoke-visio-multipage-export.ps1",
     "test:qa": "npm run compile && node ./dist/test/runQaFixture.js",
     "test:editor": "npm run compile && node ./dist/test/runEditorModelFixture.js",
@@ -203,6 +205,10 @@
       {
         "command": "aiFdeVsdxRadar.openInteractiveEditor",
         "title": "AI-FDE: 打开 VSDX 交互预览 / Open Interactive VSDX Editor"
+      },
+      {
+        "command": "aiFdeVsdxRadar.convertToModernVisio",
+        "title": "AI-FDE: 转换旧 Visio 为现代格式 / Convert Legacy Visio to Modern Package"
       },
       {
         "command": "aiFdeVsdxRadar.exportPreview",
@@ -325,8 +331,13 @@
       "explorer/context": [
         {
           "command": "aiFdeVsdxRadar.openInteractiveEditor",
-          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm|vdx|vsx|vtx|vsd|vss|vst|vdw|vwi|vsw)$/i",
+          "when": "resourceExtname =~ /\\.(vsdx|vsdm|vssx|vssm|vstx|vstm|vdx|vsx|vtx)$/i",
           "group": "navigation@10"
+        },
+        {
+          "command": "aiFdeVsdxRadar.convertToModernVisio",
+          "when": "resourceExtname =~ /\\.(vsd|vss|vst|vdw|vwi|vsw)$/i",
+          "group": "navigation@11"
         },
         {
           "command": "aiFdeVsdxRadar.exportAndQa",
@@ -413,6 +424,12 @@
           "default": 120000,
           "minimum": 10000,
           "description": "Timeout for the PowerShell Visio export process."
+        },
+        "aiFdeVsdxRadar.convertTimeoutMs": {
+          "type": "number",
+          "default": 300000,
+          "minimum": 10000,
+          "description": "Timeout for explicit legacy Visio conversion through local Visio COM automation."
         },
         "aiFdeVsdxRadar.shapeDensityWarningThreshold": {
           "type": "number",

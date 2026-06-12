@@ -1,6 +1,6 @@
 # Visio Preview & QA Linter
 
-一个面向科研绘图和项目制图场景的 VS Code 插件：可以在 VS Code 中直接预览、轻量编辑和检查 Microsoft Visio 文件。现代 Visio 包格式（`.vsdx`、`.vsdm`、`.vssx`、`.vssm`、`.vstx`、`.vstm`）和 Visio XML 格式（`.vdx`、`.vsx`、`.vtx`）走语义预览与轻量编辑路径；旧二进制/旧容器格式会被识别并给出转换提示。它的初衷很简单：让科研工作者、研究生、工程研究人员和需要频繁画图改图的人，不必每次都在编辑器、文件夹和 Visio 之间来回切换，也能把预览、结构检查和交付证据放进同一个工作流里。
+一个面向科研绘图和项目制图场景的 VS Code 插件：可以在 VS Code 中直接预览、轻量编辑和检查 Microsoft Visio 文件。现代 Visio 包格式（`.vsdx`、`.vsdm`、`.vssx`、`.vssm`、`.vstx`、`.vstm`）和 Visio XML 格式（`.vdx`、`.vsx`、`.vtx`）走语义预览与轻量编辑路径；旧二进制/旧容器格式（`.vsd`、`.vss`、`.vst`、`.vdw`、`.vwi`、`.vsw`）会被识别，并提供显式转换为现代 Visio 包的入口。它的初衷很简单：让科研工作者、研究生、工程研究人员和需要频繁画图改图的人，不必每次都在编辑器、文件夹和 Visio 之间来回切换，也能把预览、结构检查和交付证据放进同一个工作流里。
 
 这个项目由我个人维护。如果你在科研研究、论文配图、项目汇报、架构图、流程图或 Visio 文件协作中遇到任何问题，或者希望它支持新的能力，欢迎直接到 [GitHub Issues](https://github.com/ueacdyy-sys/ai-fde-vsdx-radar/issues) 提反馈和需求。只要不是特别重的功能，我都会尽量推进。也可以通过邮件联系我：`ueacdyy@gmail.com`。如果这个插件对你有帮助，也欢迎在 GitHub 上给一个 Star，这会让我更容易判断大家真正需要什么。
 
@@ -16,7 +16,7 @@ Visio Preview & QA Linter brings modern Microsoft Visio package review into VS C
 - Exports Visio files to cached PNG or PDF previews through local Microsoft Visio automation.
 - Supports multi-page diagrams with one preview per page.
 - Parses modern Visio package XML and Visio XML drawings, then writes `.aifde/qa/*.qa.json` plus `.qa.md` summaries.
-- Recognizes legacy binary and opaque Visio files (`.vsd`, `.vss`, `.vst`, `.vdw`, `.vwi`, `.vsw`) with a read-only explanation page; convert them to a modern Visio package or Visio XML file for semantic QA and lightweight editing.
+- Recognizes legacy binary and opaque Visio files (`.vsd`, `.vss`, `.vst`, `.vdw`, `.vwi`, `.vsw`) and adds an explicit conversion command so they can become modern package files (`.vsdx`, `.vssx`, `.vstx`) before entering semantic QA and lightweight editing.
 - Flags common delivery risks: missing or stale previews, empty pages, duplicate Shape IDs, unlabeled shapes, low connector ratio, diagonal connectors, connectors crossing nodes, dangling connectors, overlapping shapes, page coverage issues, and out-of-bounds shapes.
 - Adds Explorer context menu commands for preview, QA, status, and artifact reveal actions.
 - Generates workspace reports, risk reports, due-risk reports, team review boards, calendar exports, and a webview dashboard for filtering and assigning diagram risks.
@@ -29,7 +29,7 @@ Visio Preview & QA Linter brings modern Microsoft Visio package review into VS C
 - Microsoft Visio for Windows with a usable local license for high-fidelity preview export.
 - Local filesystem workspace; virtual and untrusted workspaces are intentionally disabled.
 
-The QA linter reads modern Visio package XML and Visio XML drawings locally. High-fidelity preview export requires Visio COM automation. Legacy binary and opaque Visio files can be recognized, but semantic QA and lightweight editing require conversion to a modern Visio package or Visio XML file first.
+The QA linter reads modern Visio package XML and Visio XML drawings locally. High-fidelity preview export and explicit legacy conversion require Visio COM automation. Legacy binary and opaque Visio files can be recognized, but semantic QA and lightweight editing require conversion to a modern Visio package first.
 
 ## Quick Start
 
@@ -38,10 +38,12 @@ The QA linter reads modern Visio package XML and Visio XML drawings locally. Hig
 3. Use the toolbar to switch pages, zoom, save, reveal the source file, or open settings.
 4. Drag supported shapes or connector endpoints, or edit text from the side panel.
 5. Run `AI-FDE: Export Preview and QA` when you need cached PNG/PDF previews and QA evidence.
+6. For legacy `.vsd`, `.vss`, `.vst`, `.vdw`, `.vwi`, or `.vsw` files, run `AI-FDE: 转换旧 Visio 为现代格式 / Convert Legacy Visio to Modern Package` first. The converted file is written beside the source as `*.converted.*` without overwriting existing files, then opened in the interactive editor.
 
 Useful commands:
 
 - `AI-FDE: 打开 VSDX 交互预览 / Open Interactive VSDX Editor`
+- `AI-FDE: 转换旧 Visio 为现代格式 / Convert Legacy Visio to Modern Package`
 - `AI-FDE: Export Preview and QA`
 - `AI-FDE: Open VSDX Preview`
 - `AI-FDE: Open All VSDX Previews`
@@ -95,6 +97,7 @@ The workspace dashboard helps teams triage diagram delivery risk:
 | `aiFdeVsdxRadar.qaPreset` | `custom` | QA preset: `custom`, `balanced`, `strict`, or `quiet`. |
 | `aiFdeVsdxRadar.autoExportOnSave` | `false` | Automatically export preview and QA when supported modern Visio package files change. |
 | `aiFdeVsdxRadar.exportTimeoutMs` | `120000` | Visio export timeout in milliseconds. |
+| `aiFdeVsdxRadar.convertTimeoutMs` | `300000` | Explicit legacy Visio conversion timeout in milliseconds. |
 
 Additional settings expose QA thresholds and switches for shape density, connector ratio, unlabeled shapes, page coverage, diagonal connectors, connector crossings, dangling connectors, and shape overlap checks.
 
@@ -105,6 +108,7 @@ npm install
 npm run marketplace:assets
 npm run marketplace:check
 npm run verify
+npm run smoke:visio:convert
 npm run qa:evidence
 npm run demo:pack
 npm run demo:pack:check:strict
@@ -147,5 +151,6 @@ This is a personal-maintained project for people who want a more convenient Visi
 ## Limitations
 
 - Preview export is Windows-only because it uses local Visio COM automation.
+- Legacy conversion is explicit and may be slow because it launches local Microsoft Visio; it is intentionally not run during normal file open.
 - QA rules are structural and heuristic; they complement but do not replace human diagram review.
 - This first public release is marked as Preview in the Marketplace.

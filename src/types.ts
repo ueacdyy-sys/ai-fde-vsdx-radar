@@ -8,6 +8,7 @@ export interface RadarConfig {
   qaPreset: QaPreset;
   autoExportOnSave: boolean;
   exportTimeoutMs: number;
+  convertTimeoutMs: number;
   shapeDensityWarningThreshold: number;
   connectorRatioWarningThreshold: number;
   pageCoverageLowWarningThreshold: number;
@@ -43,6 +44,19 @@ export interface PreviewExportResult {
   errorType?: string;
   command?: string;
   cached?: boolean;
+}
+
+export interface VisioConvertResult {
+  success: boolean;
+  inputPath: string;
+  outputPath: string;
+  outputFormat: 'vsdx' | 'vssx' | 'vstx';
+  pageCount?: number;
+  durationMs?: number;
+  bytes?: number;
+  error?: string;
+  errorType?: string;
+  command?: string;
 }
 
 export interface CacheRecord {

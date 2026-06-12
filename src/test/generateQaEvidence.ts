@@ -14,6 +14,7 @@ const CONFIG: RadarConfig = {
   qaPreset: 'custom',
   autoExportOnSave: false,
   exportTimeoutMs: 120000,
+  convertTimeoutMs: 300000,
   shapeDensityWarningThreshold: 80,
   connectorRatioWarningThreshold: 0.25,
   pageCoverageLowWarningThreshold: 0.02,

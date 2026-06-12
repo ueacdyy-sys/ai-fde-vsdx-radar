@@ -150,6 +150,7 @@ try {
         Invoke-AcceptanceStep -Name 'check manifest contributions' -Script {
             $manifest = Get-Content -LiteralPath $packageJsonPath -Raw | ConvertFrom-Json
             $expectedCommands = @(
+                'aiFdeVsdxRadar.convertToModernVisio',
                 'aiFdeVsdxRadar.exportPreview',
                 'aiFdeVsdxRadar.runQa',
                 'aiFdeVsdxRadar.exportAndQa',
@@ -181,6 +182,7 @@ try {
                 'aiFdeVsdxRadar.openAllRiskReports'
             )
             $expectedExplorerCommands = @(
+                'aiFdeVsdxRadar.convertToModernVisio',
                 'aiFdeVsdxRadar.exportPreview',
                 'aiFdeVsdxRadar.runQa',
                 'aiFdeVsdxRadar.exportAndQa',
@@ -199,6 +201,7 @@ try {
                 'aiFdeVsdxRadar.qaPreset',
                 'aiFdeVsdxRadar.autoExportOnSave',
                 'aiFdeVsdxRadar.exportTimeoutMs',
+                'aiFdeVsdxRadar.convertTimeoutMs',
                 'aiFdeVsdxRadar.shapeDensityWarningThreshold',
                 'aiFdeVsdxRadar.connectorRatioWarningThreshold',
                 'aiFdeVsdxRadar.pageCoverageLowWarningThreshold',
