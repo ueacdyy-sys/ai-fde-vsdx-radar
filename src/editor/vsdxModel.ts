@@ -81,6 +81,8 @@ export interface VsdxEditorTextBox {
 export interface VsdxEditorTextStyle {
   color?: string;
   fontSize?: number;
+  background?: string;
+  backgroundOpacity?: number;
 }
 
 export interface VsdxEditorShapeUpdate {
@@ -187,6 +189,8 @@ const legacyXmlCellNames = new Set([
   'Color',
   'Char.Color',
   'Size',
+  'TextBkgnd',
+  'TextBkgndTrans',
   'TxtPinX',
   'TxtPinY',
   'TxtWidth',
@@ -521,6 +525,7 @@ function collectLegacyXmlCells(source: any, names: Set<string>): any[] {
     source.Fill,
     source.Char,
     source.Character,
+    source.TextBlock,
     source.TextXForm,
     source.PageProps,
     source.Layout,
@@ -1563,12 +1568,20 @@ function readTextStyle(cells: unknown[], sections: any[], refs: Map<string, numb
     ?? readColorCell(cells, 'Color');
   const fontSize = readFontSizeCell(characterCells, refs)
     ?? readFontSizeCell(cells, refs);
+  const background = readColorCell(cells, 'TextBkgnd');
+  const backgroundOpacity = readOpacityCell(cells, 'TextBkgndTrans', refs);
   const style: VsdxEditorTextStyle = {};
   if (color) {
     style.color = color;
   }
   if (fontSize !== undefined) {
     style.fontSize = fontSize;
+  }
+  if (background) {
+    style.background = background;
+  }
+  if (backgroundOpacity !== undefined) {
+    style.backgroundOpacity = backgroundOpacity;
   }
   return Object.keys(style).length > 0 ? style : undefined;
 }

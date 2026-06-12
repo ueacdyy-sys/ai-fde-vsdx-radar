@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.26 - 2026-06-12
+
+### Added
+
+- Added semantic support for Visio `TextBkgnd` and `TextBkgndTrans` cells so shape labels can render their intended text background color and transparency in the interactive editor.
+- Added text background inheritance through StyleSheet, page-shape, and legacy Visio XML `TextBlock` paths.
+- Added regression coverage for modern Visio package text backgrounds, legacy XML direct text backgrounds, and inherited legacy XML TextStyle backgrounds.
+
 ## 0.1.25 - 2026-06-12
 
 ### Added

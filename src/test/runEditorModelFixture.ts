@@ -443,6 +443,8 @@ async function verifiesTextStyleCells(): Promise<void> {
       <Cell N="Height" V="1"/>
       <Cell N="Color" V="2"/>
       <Cell N="Size" V="18" U="PT"/>
+      <Cell N="TextBkgnd" V="#ffeeaa"/>
+      <Cell N="TextBkgndTrans" V="25"/>
       <Text>Direct text style</Text>
     </Shape>
     <Shape ID="2" NameU="Character Text">
@@ -463,6 +465,8 @@ async function verifiesTextStyleCells(): Promise<void> {
   const character = diagram.pages[0]?.shapes[1];
   assert.strictEqual(direct?.textStyle?.color, '#ff0000', 'expected direct text color to use Visio indexed color');
   assert.ok(Math.abs((direct?.textStyle?.fontSize ?? 0) - 0.25) < 0.0001, 'expected point text size to be converted to inches');
+  assert.strictEqual(direct?.textStyle?.background, '#ffeeaa', 'expected direct text background to be parsed');
+  assert.ok(Math.abs((direct?.textStyle?.backgroundOpacity ?? 0) - 0.75) < 0.0001, 'expected text background transparency to become opacity');
   assert.strictEqual(character?.textStyle?.color, '#112233', 'expected character row text color to be parsed');
   assert.ok(Math.abs((character?.textStyle?.fontSize ?? 0) - 0.25) < 0.0001, 'expected character row text size to be parsed');
 }
@@ -891,6 +895,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
             <TxtLocPinX>0.5</TxtLocPinX>
             <TxtLocPinY>0.25</TxtLocPinY>
           </TextXForm>
+          <TextBlock><TextBkgnd>#ddeeff</TextBkgnd><TextBkgndTrans>50</TextBkgndTrans></TextBlock>
           <Char IX="0">
             <Color>RGB(68,85,102)</Color>
             <Size U="PT">14</Size>
@@ -930,6 +935,8 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.ok(shape.textBox, 'expected legacy XML text box metadata');
   assert.strictEqual(shape.textStyle?.color, '#445566', 'expected legacy XML text color metadata');
   assert.ok(Math.abs((shape.textStyle?.fontSize ?? 0) - (14 / 72)) < 0.0001, 'expected legacy XML text size metadata');
+  assert.strictEqual(shape.textStyle?.background, '#ddeeff', 'expected legacy XML text background metadata');
+  assert.ok(Math.abs((shape.textStyle?.backgroundOpacity ?? 0) - 0.5) < 0.0001, 'expected legacy XML text background transparency metadata');
   assert.ok(Math.abs((shape.textBox?.x ?? 0) - 1) < 0.0001, 'expected legacy XML text box x');
   assert.ok(Math.abs((shape.textBox?.width ?? 0) - 1) < 0.0001, 'expected legacy XML text box width');
   assert.ok(shape.geometryPath?.startsWith('M 0 1 L 2 1'), 'expected legacy XML geometry to render');
@@ -991,6 +998,8 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
       <Cell N="BeginArrowSize" V="2"/>
       <Cell N="EndArrowSize" V="4"/>
       <Cell N="LineWeight" V="0.04"/>
+      <Cell N="TextBkgnd" V="#f0f0f0"/>
+      <Cell N="TextBkgndTrans" V="20"/>
       <Section N="Character" IX="0"><Row IX="0"><Cell N="Color" V="#123456"/><Cell N="Size" V="16" U="PT"/></Row></Section>
     </StyleSheet>
   </StyleSheets>
@@ -1026,6 +1035,8 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
   assert.ok(Math.abs((shape?.strokeWidth ?? 0) - 0.04) < 0.0001, 'expected legacy XML line weight to be applied');
   assert.strictEqual(shape?.textStyle?.color, '#123456', 'expected legacy XML TextStyle color to be applied');
   assert.ok(Math.abs((shape?.textStyle?.fontSize ?? 0) - (16 / 72)) < 0.0001, 'expected legacy XML TextStyle size to be applied');
+  assert.strictEqual(shape?.textStyle?.background, '#f0f0f0', 'expected legacy XML TextStyle background to be applied');
+  assert.ok(Math.abs((shape?.textStyle?.backgroundOpacity ?? 0) - 0.8) < 0.0001, 'expected legacy XML TextStyle background opacity to be applied');
 }
 
 async function verifiesLegacyXmlStencilFallbackPreview(): Promise<void> {

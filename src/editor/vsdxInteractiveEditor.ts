@@ -452,6 +452,9 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       text-anchor: middle;
       font-family: "Segoe UI", sans-serif;
     }
+    .text-background {
+      pointer-events: none;
+    }
     .inspector {
       background: var(--surface-alt);
       padding: 12px;
@@ -978,9 +981,13 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       }
 
       if (shape.text) {
+        const textBox = resolveTextBox(page, shape, x, y, width, height);
+        const textBackground = renderTextBackground(shape, textBox);
+        if (textBackground) {
+          group.append(textBackground);
+        }
         const text = document.createElementNS(svgNS, 'text');
         text.classList.add('shape-label');
-        const textBox = resolveTextBox(page, shape, x, y, width, height);
         text.setAttribute('x', String(textBox.x + textBox.width / 2));
         text.setAttribute('y', String(textBox.y + textBox.height / 2));
         if (Math.abs(textBox.angle) > 0.0001) {
@@ -1045,6 +1052,24 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         height,
         angle: numberOr(box.angle, 0)
       };
+    }
+
+    function renderTextBackground(shape, textBox) {
+      const style = shape.textStyle || {};
+      const fill = safeColor(style.background, 'none');
+      if (fill === 'none') {
+        return null;
+      }
+      const rect = document.createElementNS(svgNS, 'rect');
+      rect.classList.add('text-background');
+      rect.setAttribute('x', String(textBox.x));
+      rect.setAttribute('y', String(textBox.y));
+      rect.setAttribute('width', String(textBox.width));
+      rect.setAttribute('height', String(textBox.height));
+      rect.setAttribute('rx', String(Math.min(0.04, textBox.height / 8)));
+      rect.setAttribute('fill', fill);
+      rect.setAttribute('fill-opacity', String(clamp(numberOr(style.backgroundOpacity, 1), 0, 1)));
+      return rect;
     }
 
     function textFontSize(shape, textBox) {
