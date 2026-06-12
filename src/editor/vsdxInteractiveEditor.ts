@@ -1306,7 +1306,9 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
 
     function textFontSize(shape, textBox) {
       const fallback = Math.min(0.16, Math.max(0.08, textBox.height / 3.2));
-      return clamp(numberOr(shape.textStyle && shape.textStyle.fontSize, fallback), 0.04, Math.max(0.04, textBox.height * 0.75));
+      const baseline = shape.textStyle && shape.textStyle.baseline;
+      const scale = baseline === 'superscript' || baseline === 'subscript' ? 0.75 : 1;
+      return clamp(numberOr(shape.textStyle && shape.textStyle.fontSize, fallback) * scale, 0.04, Math.max(0.04, textBox.height * 0.75));
     }
 
     function resolveTextPosition(shape, textBox, lineCount, lineHeight) {
@@ -1358,6 +1360,11 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       }
       if (style.italic) {
         text.setAttribute('font-style', 'italic');
+      }
+      if (style.baseline === 'superscript') {
+        text.setAttribute('baseline-shift', 'super');
+      } else if (style.baseline === 'subscript') {
+        text.setAttribute('baseline-shift', 'sub');
       }
       const decorations = [];
       if (style.underline) {

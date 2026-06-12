@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.43 - 2026-06-12
+
+### Added
+
+- Added Visio `Character.Pos` / `Pos` text metadata so superscript and subscript labels render with SVG baseline shifts.
+- Preserves baseline position through direct shape cells, Character sections, TextStyle StyleSheets, master-shape inheritance, formula cells, and legacy Visio XML files.
+- Added regression coverage for modern package direct/Character/StyleSheet baseline position and legacy XML direct/TextStyle baseline position.
+
 ## 0.1.42 - 2026-06-12
 
 ### Added

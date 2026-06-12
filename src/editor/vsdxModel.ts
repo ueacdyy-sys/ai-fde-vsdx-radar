@@ -110,6 +110,7 @@ export interface VsdxEditorTextStyle {
   underline?: boolean;
   doubleUnderline?: boolean;
   strikethrough?: boolean;
+  baseline?: 'normal' | 'superscript' | 'subscript';
   horizontalAlign?: 'left' | 'center' | 'right';
   verticalAlign?: 'top' | 'middle' | 'bottom';
   textPosAfterBullet?: number;
@@ -248,6 +249,7 @@ const legacyXmlCellNames = new Set([
   'Font',
   'Size',
   'Style',
+  'Pos',
   'DblUnderline',
   'DoubleUnderline',
   'Strikethru',
@@ -334,6 +336,7 @@ const textStyleCellNames = new Set([
   'Font',
   'Size',
   'Style',
+  'Pos',
   'DblUnderline',
   'DoubleUnderline',
   'Strikethru',
@@ -1708,6 +1711,8 @@ function readTextStyle(
     ?? readFontSizeCell(cells, refs);
   const fontStyle = readCharacterStyleCell(characterCells, refs)
     ?? readCharacterStyleCell(cells, refs);
+  const baseline = readCharacterPositionCell(characterCells, refs)
+    ?? readCharacterPositionCell(cells, refs);
   const doubleUnderline = readTextBooleanCell(characterCells, 'DblUnderline', refs)
     ?? readTextBooleanCell(characterCells, 'DoubleUnderline', refs)
     ?? readTextBooleanCell(cells, 'DblUnderline', refs)
@@ -1738,6 +1743,9 @@ function readTextStyle(
     style.bold = (fontStyle & 1) !== 0;
     style.italic = (fontStyle & 2) !== 0;
     style.underline = (fontStyle & 4) !== 0;
+  }
+  if (baseline) {
+    style.baseline = baseline;
   }
   if (doubleUnderline !== undefined) {
     style.doubleUnderline = doubleUnderline;
@@ -1783,6 +1791,21 @@ function readCharacterStyleCell(cells: unknown[], refs?: Map<string, number>): n
     return undefined;
   }
   return Math.max(0, Math.trunc(value));
+}
+
+function readCharacterPositionCell(cells: unknown[], refs?: Map<string, number>): VsdxEditorTextStyle['baseline'] | undefined {
+  const value = readCellNumber(cells, 'Pos', refs);
+  if (value === undefined) {
+    return undefined;
+  }
+  const position = Math.trunc(value);
+  if (position === 1) {
+    return 'superscript';
+  }
+  if (position === 2) {
+    return 'subscript';
+  }
+  return 'normal';
 }
 
 function readTextBooleanCell(cells: unknown[], name: string, refs?: Map<string, number>): boolean | undefined {
