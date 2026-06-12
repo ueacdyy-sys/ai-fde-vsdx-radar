@@ -61,6 +61,8 @@ export interface VsdxEditorShape {
   width?: number;
   height?: number;
   angle?: number;
+  flipX?: boolean;
+  flipY?: boolean;
   beginX?: number;
   beginY?: number;
   endX?: number;
@@ -940,6 +942,8 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const endArrowSize = readCellNumber(effectiveCells, 'EndArrowSize', shapeFormulaRefs);
   const fillPattern = readCellNumber(effectiveCells, 'FillPattern', shapeFormulaRefs);
   const angle = readCellNumber(effectiveCells, 'Angle', shapeFormulaRefs) ?? 0;
+  const flipX = readCellNumber(effectiveCells, 'FlipX', shapeFormulaRefs) === 1;
+  const flipY = readCellNumber(effectiveCells, 'FlipY', shapeFormulaRefs) === 1;
   const textBox = readTextBox(effectiveCells, shapeFormulaRefs);
   const textStyle = readTextStyle(effectiveCells, effectiveSections, shapeFormulaRefs, context.styleSheets.fontFaces);
   const shadow = readShadowStyle(effectiveCells, shapeFormulaRefs);
@@ -1031,6 +1035,8 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     width,
     height,
     angle,
+    flipX,
+    flipY,
     imageDataUri,
     geometryPath,
     geometryPaths

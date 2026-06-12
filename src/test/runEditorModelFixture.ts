@@ -12,6 +12,7 @@ async function main(): Promise<void> {
   await verifiesGeometrySectionPaintFlags();
   await verifiesFormulaGeometryAndMasterRowInheritance();
   await verifiesFormulaOnlyShapeTransformCells();
+  await verifiesShapeFlipTransformCells();
   await verifiesTextBoxTransformCells();
   await verifiesColorFormulaAndNoPaint();
   await verifiesPaintTransparencyCells();
@@ -350,6 +351,88 @@ async function verifiesFormulaOnlyShapeTransformCells(): Promise<void> {
   assert.ok(pageXml.includes('<Cell N="PinY" V="2.75"/>'), 'expected edited formula-only PinY to be numeric');
   assert.ok(pageXml.includes('<Cell N="Width" V="3"/>'), 'expected edited formula-only Width to be numeric');
   assert.ok(pageXml.includes('<Cell N="Height" V="1.5"/>'), 'expected edited formula-only Height to be numeric');
+}
+
+async function verifiesShapeFlipTransformCells(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/masters/masters.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<Masters xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <Master ID="2" NameU="FlippedMaster"><Rel r:id="rId1"/></Master>
+</Masters>`);
+  zip.file('visio/masters/_rels/masters.xml.rels', `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.microsoft.com/visio/2010/relationships/master" Target="master1.xml"/>
+</Relationships>`);
+  zip.file('visio/masters/master1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<MasterContents>
+  <Shapes>
+    <Shape ID="5">
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="FlipX" V="1"/>
+      <Section N="Geometry" IX="0">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" V="2"/><Cell N="Y" V="1"/></Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</MasterContents>`);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="DirectFlip">
+      <Cell N="PinX" V="2"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="FlipX" V="1"/>
+      <Cell N="FlipY" F="GUARD(1)"/>
+    </Shape>
+    <Shape ID="2" NameU="MasterFlip" Master="2">
+      <Cell N="PinX" V="5"/>
+      <Cell N="PinY" V="2"/>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'shape-flip-fixture.vsdx');
+  const direct = diagram.pages[0]?.shapes.find(shape => shape.id === '1');
+  const inherited = diagram.pages[0]?.shapes.find(shape => shape.id === '2');
+  assert.ok(direct?.editable, 'expected directly flipped shape to stay editable');
+  assert.strictEqual(direct?.flipX, true, 'expected direct FlipX metadata');
+  assert.strictEqual(direct?.flipY, true, 'expected formula FlipY metadata');
+  assert.ok(inherited?.editable, 'expected master-flipped shape to stay editable');
+  assert.strictEqual(inherited?.flipX, true, 'expected master FlipX metadata to reach page instance');
+  assert.strictEqual(inherited?.flipY, false, 'expected absent master FlipY metadata to default false');
+
+  const legacySource = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<VisioDocument>
+  <Pages>
+    <Page ID="1" NameU="Legacy Flip">
+      <PageSheet><PageWidth>8</PageWidth><PageHeight>5</PageHeight></PageSheet>
+      <Shapes>
+        <Shape ID="9" NameU="LegacyFlip">
+          <XForm>
+            <PinX>2</PinX>
+            <PinY>2</PinY>
+            <Width>2</Width>
+            <Height>1</Height>
+            <LocPinX>1</LocPinX>
+            <LocPinY>0.5</LocPinY>
+            <FlipX>1</FlipX>
+            <FlipY F="GUARD(1)">0</FlipY>
+          </XForm>
+        </Shape>
+      </Shapes>
+    </Page>
+  </Pages>
+</VisioDocument>`, 'utf8');
+  const legacyDiagram = await readVsdxDiagram(legacySource, 'legacy-flip-fixture.vdx');
+  const legacyShape = legacyDiagram.pages[0]?.shapes[0];
+  assert.ok(legacyShape?.editable, 'expected legacy XML flipped shape to stay editable');
+  assert.strictEqual(legacyShape?.flipX, true, 'expected legacy XML FlipX metadata');
+  assert.strictEqual(legacyShape?.flipY, true, 'expected legacy XML formula FlipY metadata');
 }
 
 async function verifiesTextBoxTransformCells(): Promise<void> {

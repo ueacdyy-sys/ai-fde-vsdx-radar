@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.40 - 2026-06-12
+
+### Added
+
+- Added shape-level `FlipX` and `FlipY` metadata to the interactive editor model so flipped Visio shapes can render mirrored instead of losing orientation.
+- Preserves flip metadata through direct shape cells, master-shape inheritance, formula cells, and legacy Visio XML files while keeping supported shapes editable.
+- Added regression coverage for modern package direct flips, inherited master flips, and legacy XML flip metadata.
+
 ## 0.1.39 - 2026-06-12
 
 ### Added

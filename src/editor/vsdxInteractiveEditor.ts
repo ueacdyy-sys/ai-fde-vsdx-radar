@@ -963,9 +963,9 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       const width = numberOr(shape.width, 1);
       const height = numberOr(shape.height, 0.6);
       const angle = numberOr(shape.angle, 0);
-      if (Math.abs(angle) > 0.0001) {
-        const degrees = -angle * 180 / Math.PI;
-        group.setAttribute('transform', 'rotate(' + degrees + ' ' + (x + width / 2) + ' ' + (y + height / 2) + ')');
+      const transform = shapeTransform(shape, x, y, width, height);
+      if (transform) {
+        group.setAttribute('transform', transform);
       }
       const shadow = renderShapeShadow(shape, x, y, width, height);
       if (shadow) {
@@ -1048,7 +1048,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         group.append(text);
       }
 
-      if (shape.editable && Math.abs(angle) < 0.0001) {
+      if (shape.editable && Math.abs(angle) < 0.0001 && !shape.flipX && !shape.flipY) {
         const handle = document.createElementNS(svgNS, 'rect');
         handle.classList.add('handle', 'shape-resize-handle');
         handle.setAttribute('x', String(x + width - 0.06));
@@ -1143,6 +1143,22 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         return fallback;
       }
       return round4(clamp(rounding, 0, Math.min(width, height) / 2));
+    }
+
+    function shapeTransform(shape, x, y, width, height) {
+      const angle = numberOr(shape.angle, 0);
+      const scaleX = shape.flipX === true ? -1 : 1;
+      const scaleY = shape.flipY === true ? -1 : 1;
+      const transforms = [];
+      const cx = x + width / 2;
+      const cy = y + height / 2;
+      if (Math.abs(angle) > 0.0001) {
+        transforms.push('rotate(' + (-angle * 180 / Math.PI) + ' ' + cx + ' ' + cy + ')');
+      }
+      if (scaleX !== 1 || scaleY !== 1) {
+        transforms.push('translate(' + cx + ' ' + cy + ') scale(' + scaleX + ' ' + scaleY + ') translate(' + (-cx) + ' ' + (-cy) + ')');
+      }
+      return transforms.join(' ');
     }
 
     function shapeFill(shape) {
