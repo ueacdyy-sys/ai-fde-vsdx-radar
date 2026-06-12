@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.33 - 2026-06-12
+
+### Added
+
+- Added semantic support for Visio `Rounding` cells so fallback rectangle shapes render their intended rounded or square corners in the interactive editor.
+- Applied the same rounded-corner metadata to lightweight shape shadows so shadow geometry stays aligned with the visible shape outline.
+- Added regression coverage for direct modern Visio package rounding, inherited LineStyle rounding, master-style inheritance, and legacy Visio XML line rounding metadata.
+
 ## 0.1.32 - 2026-06-12
 
 ### Added

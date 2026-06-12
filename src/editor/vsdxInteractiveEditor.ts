@@ -983,7 +983,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         rect.setAttribute('y', String(y));
         rect.setAttribute('width', String(width));
         rect.setAttribute('height', String(height));
-        rect.setAttribute('rx', String(Math.min(0.08, height / 6)));
+        rect.setAttribute('rx', String(shapeCornerRadius(shape, width, height)));
         rect.setAttribute('fill', shape.imageDataUri ? 'none' : shapeFill(shape));
         rect.setAttribute('stroke', safeColor(shape.line, '#586069'));
         rect.setAttribute('stroke-width', String(Math.max(0.012, numberOr(shape.strokeWidth, 0.02))));
@@ -1089,11 +1089,20 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       rect.setAttribute('y', String(y + dy));
       rect.setAttribute('width', String(width));
       rect.setAttribute('height', String(height));
-      rect.setAttribute('rx', String(Math.min(0.08, height / 6)));
+      rect.setAttribute('rx', String(shapeCornerRadius(shape, width, height)));
       rect.setAttribute('fill', fill);
       rect.setAttribute('fill-opacity', String(opacity));
       group.append(rect);
       return group;
+    }
+
+    function shapeCornerRadius(shape, width, height) {
+      const fallback = Math.min(0.08, height / 6);
+      const rounding = numberOr(shape.rounding, fallback);
+      if (!Number.isFinite(rounding) || rounding < 0) {
+        return fallback;
+      }
+      return round4(clamp(rounding, 0, Math.min(width, height) / 2));
     }
 
     function shapeFill(shape) {

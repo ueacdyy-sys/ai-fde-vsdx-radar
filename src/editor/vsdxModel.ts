@@ -53,6 +53,7 @@ export interface VsdxEditorShape {
   strokeOpacity?: number;
   linePattern?: number;
   lineCap?: number;
+  rounding?: number;
   shadow?: VsdxEditorShadow;
   strokeWidth: number;
   x?: number;
@@ -207,6 +208,7 @@ const legacyXmlCellNames = new Set([
   'LineColor',
   'LinePattern',
   'LineCap',
+  'Rounding',
   'BeginArrowSize',
   'EndArrowSize',
   'FillForegnd',
@@ -913,6 +915,7 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const lineWeight = readCellNumber(effectiveCells, 'LineWeight', shapeFormulaRefs);
   const linePattern = readCellNumber(effectiveCells, 'LinePattern', shapeFormulaRefs);
   const lineCap = readCellNumber(effectiveCells, 'LineCap', shapeFormulaRefs);
+  const rounding = readRoundingCell(effectiveCells, shapeFormulaRefs);
   const beginArrow = readCellNumber(effectiveCells, 'BeginArrow', shapeFormulaRefs);
   const endArrow = readCellNumber(effectiveCells, 'EndArrow', shapeFormulaRefs);
   const beginArrowSize = readCellNumber(effectiveCells, 'BeginArrowSize', shapeFormulaRefs);
@@ -942,6 +945,7 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     strokeOpacity: readOpacityCell(effectiveCells, 'LineColorTrans', shapeFormulaRefs),
     linePattern,
     lineCap,
+    rounding,
     shadow,
     beginArrowSize,
     endArrowSize,
@@ -1828,6 +1832,15 @@ function readLineColor(cells: unknown[]): string {
   }
   return readColorCell(cells, 'LineColor')
     ?? '#586069';
+}
+
+function readRoundingCell(cells: unknown[], refs?: Map<string, number>): number | undefined {
+  const cell = cells.find((candidate: any) => candidate?.N === 'Rounding') as any;
+  const value = readCellNumber(cells, 'Rounding', refs) ?? readUnitNumber(cell?.V) ?? readUnitNumber(cell?.F);
+  if (value === undefined || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return Math.max(0, value);
 }
 
 function readShadowStyle(cells: unknown[], refs?: Map<string, number>): VsdxEditorShadow | undefined {

@@ -16,6 +16,7 @@ async function main(): Promise<void> {
   await verifiesPaintTransparencyCells();
   await verifiesFillPatternBackgroundCells();
   await verifiesShapeLinePatternCells();
+  await verifiesShapeRoundingCells();
   await verifiesShadowStyleCells();
   await verifiesTextStyleCells();
   await verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle();
@@ -498,6 +499,37 @@ async function verifiesShapeLinePatternCells(): Promise<void> {
   assert.ok(Math.abs((shape.strokeWidth ?? 0) - 0.05) < 0.0001, 'expected shape line weight metadata');
 }
 
+async function verifiesShapeRoundingCells(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Rounded Shape">
+      <Cell N="PinX" V="2"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="Rounding" F="GUARD(0.18)"/>
+    </Shape>
+    <Shape ID="2" NameU="Square Shape">
+      <Cell N="PinX" V="5"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="Rounding" V="0"/>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'shape-rounding-fixture.vsdx');
+  const rounded = diagram.pages[0]?.shapes[0];
+  const square = diagram.pages[0]?.shapes[1];
+  assert.ok(rounded, 'expected rounded shape to be parsed');
+  assert.ok(Math.abs((rounded?.rounding ?? 0) - 0.18) < 0.0001, 'expected formula rounding metadata');
+  assert.strictEqual(square?.rounding, 0, 'expected zero rounding metadata to be preserved');
+}
+
 async function verifiesShadowStyleCells(): Promise<void> {
   const zip = new JSZip();
   addSinglePageMetadata(zip);
@@ -635,6 +667,7 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
       <Cell N="LinePattern" V="2"/>
       <Cell N="LineCap" V="1"/>
       <Cell N="LineWeight" V="0.03"/>
+      <Cell N="Rounding" V="0.17"/>
       <Cell N="ShdwPattern" V="1"/>
       <Cell N="ShdwForegnd" V="#222222"/>
       <Cell N="ShdwForegndTrans" V="30"/>
@@ -722,6 +755,7 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
   assert.ok(Math.abs((direct?.textStyle?.margins?.right ?? 0) - 0.08) < 0.0001, 'expected page shape right margin to inherit from TextStyle');
   assert.strictEqual(direct?.linePattern, 2, 'expected page shape line pattern to inherit from LineStyle');
   assert.strictEqual(direct?.lineCap, 1, 'expected page shape line cap to inherit from LineStyle');
+  assert.ok(Math.abs((direct?.rounding ?? 0) - 0.17) < 0.0001, 'expected page shape rounding to inherit from LineStyle');
   assert.strictEqual(direct?.shadow?.color, '#222222', 'expected page shape shadow color to inherit from FillStyle');
   assert.ok(Math.abs((direct?.shadow?.opacity ?? 0) - 0.7) < 0.0001, 'expected page shape shadow opacity to inherit from FillStyle');
   assert.ok(Math.abs((direct?.shadow?.offsetX ?? 0) - 0.15) < 0.0001, 'expected page shape shadow offset X to inherit from FillStyle');
@@ -730,6 +764,7 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
   assert.strictEqual(inheritedFromMaster?.fill, '#123456', 'expected master style fill to reach page instance');
   assert.strictEqual(inheritedFromMaster?.fillBackground, '#f6d365', 'expected master style fill background to reach page instance');
   assert.strictEqual(inheritedFromMaster?.line, '#654321', 'expected master style line to reach page instance');
+  assert.ok(Math.abs((inheritedFromMaster?.rounding ?? 0) - 0.17) < 0.0001, 'expected master style rounding to reach page instance');
   assert.strictEqual(inheritedFromMaster?.shadow?.color, '#222222', 'expected master style shadow to reach page instance');
   assert.strictEqual(inheritedFromMaster?.width, 2, 'expected master width to remain available through effective cells');
   assert.strictEqual(inheritedFromMaster?.height, 1, 'expected master height to remain available through effective cells');
@@ -1045,7 +1080,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
             <LocPinX>1</LocPinX>
             <LocPinY>0.5</LocPinY>
           </XForm>
-          <Line><LinePattern>2</LinePattern><LineCap>2</LineCap><BeginArrowSize>1</BeginArrowSize><EndArrowSize>4</EndArrowSize></Line>
+          <Line><LinePattern>2</LinePattern><LineCap>2</LineCap><Rounding>0.19</Rounding><BeginArrowSize>1</BeginArrowSize><EndArrowSize>4</EndArrowSize></Line>
           <Fill>
             <FillPattern>7</FillPattern>
             <FillForegnd>#aa5500</FillForegnd>
@@ -1115,6 +1150,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.strictEqual(shape.text, 'Legacy text');
   assert.strictEqual(shape.lineCap, 2, 'expected legacy XML direct line cap metadata');
   assert.strictEqual(shape.linePattern, 2, 'expected legacy XML direct line pattern metadata');
+  assert.ok(Math.abs((shape.rounding ?? 0) - 0.19) < 0.0001, 'expected legacy XML direct rounding metadata');
   assert.strictEqual(shape.fillPattern, 7, 'expected legacy XML direct fill pattern metadata');
   assert.strictEqual(shape.fill, '#aa5500', 'expected legacy XML direct fill foreground metadata');
   assert.ok(Math.abs((shape.fillOpacity ?? 0) - 0.9) < 0.0001, 'expected legacy XML direct fill foreground opacity metadata');
@@ -1202,6 +1238,7 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
       <Cell N="LineColor" V="#6688aa"/>
       <Cell N="LinePattern" V="2"/>
       <Cell N="LineCap" V="1"/>
+      <Cell N="Rounding" V="0.16"/>
       <Cell N="BeginArrowSize" V="2"/>
       <Cell N="EndArrowSize" V="4"/>
       <Cell N="LineWeight" V="0.04"/>
@@ -1249,6 +1286,7 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
   assert.strictEqual(shape?.line, '#6688aa', 'expected legacy XML LineStyle to be applied');
   assert.strictEqual(shape?.linePattern, 2, 'expected legacy XML line pattern to be applied');
   assert.strictEqual(shape?.lineCap, 1, 'expected legacy XML line cap to be applied');
+  assert.ok(Math.abs((shape?.rounding ?? 0) - 0.16) < 0.0001, 'expected legacy XML line rounding to be applied');
   assert.strictEqual(shape?.beginArrowSize, 2, 'expected legacy XML begin arrow size to be applied');
   assert.strictEqual(shape?.endArrowSize, 4, 'expected legacy XML end arrow size to be applied');
   assert.strictEqual(shape?.shadow?.color, '#101820', 'expected legacy XML FillStyle shadow color to be applied');
