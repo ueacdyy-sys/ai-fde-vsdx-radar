@@ -496,12 +496,15 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
       <Cell N="LineWeight" V="0.03"/>
       <Cell N="BeginArrow" V="4"/>
       <Cell N="EndArrow" V="13"/>
+      <Cell N="BeginArrowSize" V="1"/>
+      <Cell N="EndArrowSize" V="4"/>
     </StyleSheet>
     <StyleSheet ID="8" NameU="Connector" LineStyle="7" FillStyle="7" TextStyle="7">
       <Cell N="LineColor" V="#abcdef"/>
       <Cell N="LinePattern" V="3"/>
       <Cell N="LineCap" V="2"/>
       <Cell N="EndArrow" V="5"/>
+      <Cell N="EndArrowSize" F="GUARD(3)"/>
       <Cell N="FillForegnd" V="Themed" F="Inh"/>
     </StyleSheet>
   </StyleSheets>
@@ -572,6 +575,8 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
   assert.strictEqual(connector?.linePattern, 3, 'expected connector line pattern to inherit from connector LineStyle');
   assert.strictEqual(connector?.lineCap, 2, 'expected connector line cap to inherit from connector LineStyle');
   assert.strictEqual(connector?.endArrow, 5, 'expected connector end arrow to inherit from connector LineStyle');
+  assert.strictEqual(connector?.beginArrowSize, 1, 'expected connector begin arrow size to inherit from parent LineStyle');
+  assert.strictEqual(connector?.endArrowSize, 3, 'expected connector end arrow size formula to inherit from connector LineStyle');
   assert.strictEqual(connector?.fill, '#123456', 'expected inherited FillStyle fallback when connector style fill is Inh');
 }
 
@@ -877,7 +882,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
             <LocPinX>1</LocPinX>
             <LocPinY>0.5</LocPinY>
           </XForm>
-          <Line><LineCap>2</LineCap></Line>
+          <Line><LineCap>2</LineCap><BeginArrowSize>1</BeginArrowSize><EndArrowSize>4</EndArrowSize></Line>
           <TextXForm>
             <TxtPinX>1.5</TxtPinX>
             <TxtPinY>0.25</TxtPinY>
@@ -920,6 +925,8 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.strictEqual(shape.editable, true);
   assert.strictEqual(shape.text, 'Legacy text');
   assert.strictEqual(shape.lineCap, 2, 'expected legacy XML direct line cap metadata');
+  assert.strictEqual(shape.beginArrowSize, 1, 'expected legacy XML direct begin arrow size metadata');
+  assert.strictEqual(shape.endArrowSize, 4, 'expected legacy XML direct end arrow size metadata');
   assert.ok(shape.textBox, 'expected legacy XML text box metadata');
   assert.strictEqual(shape.textStyle?.color, '#445566', 'expected legacy XML text color metadata');
   assert.ok(Math.abs((shape.textStyle?.fontSize ?? 0) - (14 / 72)) < 0.0001, 'expected legacy XML text size metadata');
@@ -981,6 +988,8 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
       <Cell N="LineColor" V="#6688aa"/>
       <Cell N="LinePattern" V="2"/>
       <Cell N="LineCap" V="1"/>
+      <Cell N="BeginArrowSize" V="2"/>
+      <Cell N="EndArrowSize" V="4"/>
       <Cell N="LineWeight" V="0.04"/>
       <Section N="Character" IX="0"><Row IX="0"><Cell N="Color" V="#123456"/><Cell N="Size" V="16" U="PT"/></Row></Section>
     </StyleSheet>
@@ -1012,6 +1021,8 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
   assert.strictEqual(shape?.line, '#6688aa', 'expected legacy XML LineStyle to be applied');
   assert.strictEqual(shape?.linePattern, 2, 'expected legacy XML line pattern to be applied');
   assert.strictEqual(shape?.lineCap, 1, 'expected legacy XML line cap to be applied');
+  assert.strictEqual(shape?.beginArrowSize, 2, 'expected legacy XML begin arrow size to be applied');
+  assert.strictEqual(shape?.endArrowSize, 4, 'expected legacy XML end arrow size to be applied');
   assert.ok(Math.abs((shape?.strokeWidth ?? 0) - 0.04) < 0.0001, 'expected legacy XML line weight to be applied');
   assert.strictEqual(shape?.textStyle?.color, '#123456', 'expected legacy XML TextStyle color to be applied');
   assert.ok(Math.abs((shape?.textStyle?.fontSize ?? 0) - (16 / 72)) < 0.0001, 'expected legacy XML TextStyle size to be applied');

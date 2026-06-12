@@ -66,6 +66,8 @@ export interface VsdxEditorShape {
   textStyle?: VsdxEditorTextStyle;
   beginArrow?: number;
   endArrow?: number;
+  beginArrowSize?: number;
+  endArrowSize?: number;
 }
 
 export interface VsdxEditorTextBox {
@@ -178,6 +180,8 @@ const legacyXmlCellNames = new Set([
   'LineColor',
   'LinePattern',
   'LineCap',
+  'BeginArrowSize',
+  'EndArrowSize',
   'FillForegnd',
   'FillPattern',
   'Color',
@@ -849,6 +853,8 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const lineCap = readCellNumber(effectiveCells, 'LineCap', shapeFormulaRefs);
   const beginArrow = readCellNumber(effectiveCells, 'BeginArrow', shapeFormulaRefs);
   const endArrow = readCellNumber(effectiveCells, 'EndArrow', shapeFormulaRefs);
+  const beginArrowSize = readCellNumber(effectiveCells, 'BeginArrowSize', shapeFormulaRefs);
+  const endArrowSize = readCellNumber(effectiveCells, 'EndArrowSize', shapeFormulaRefs);
   const angle = readCellNumber(effectiveCells, 'Angle', shapeFormulaRefs) ?? 0;
   const textBox = readTextBox(effectiveCells, shapeFormulaRefs);
   const textStyle = readTextStyle(effectiveCells, effectiveSections, shapeFormulaRefs);
@@ -869,6 +875,8 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     strokeOpacity: readOpacityCell(effectiveCells, 'LineColorTrans', shapeFormulaRefs),
     linePattern,
     lineCap,
+    beginArrowSize,
+    endArrowSize,
     strokeWidth: Math.max(0.015, lineWeight ?? 0.02)
   };
   if (textBox) {
@@ -1482,17 +1490,18 @@ function mimeTypeForImageTarget(target: string): string | undefined {
 
 function readCellNumber(cells: unknown[], name: string, refs?: Map<string, number>, seen = new Set<string>()): number | undefined {
   const cell = cells.find((candidate: any) => candidate?.N === name) as any;
-  const value = Number(cell?.V);
-  if (Number.isFinite(value)) {
-    return value;
-  }
   const formulaRefs = refs ? new Map(refs) : new Map<string, number>();
   const key = name.toLowerCase();
   if (!formulaRefs.has(key) && !seen.has(key)) {
     seen.add(key);
     addFormulaRefsForCells(cells, formulaRefs, seen);
   }
-  return readFormulaNumber(cell?.F, formulaRefs);
+  const formulaValue = readFormulaNumber(cell?.F, formulaRefs);
+  if (formulaValue !== undefined) {
+    return formulaValue;
+  }
+  const value = Number(cell?.V);
+  return Number.isFinite(value) ? value : undefined;
 }
 
 function readFormulaNumber(formula: unknown, refs?: Map<string, number>): number | undefined {

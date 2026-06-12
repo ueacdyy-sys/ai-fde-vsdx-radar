@@ -2,6 +2,18 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.25 - 2026-06-12
+
+### Added
+
+- Added semantic support for Visio `BeginArrowSize` and `EndArrowSize` cells so connector arrowheads can render with small, medium, large, or extra-large marker variants instead of one fixed SVG marker size.
+- Added arrow-size inheritance through StyleSheet, master, page-shape, formula, and legacy Visio XML paths.
+- Updated numeric ShapeSheet cell resolution to prefer valid formulas over stale cached values, improving formula-authored Visio files while retaining cached-value fallback.
+
+### Fixed
+
+- Fixed connector arrow marker generation so each page defines only the arrow-size variants it actually needs.
+
 ## 0.1.24 - 2026-06-12
 
 ### Added

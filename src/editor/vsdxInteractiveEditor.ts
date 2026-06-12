@@ -859,7 +859,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       svg.setAttribute('viewBox', '0 0 ' + page.width + ' ' + page.height);
       svg.style.width = Math.max(80, page.width * 96 * zoom) + 'px';
       svg.style.height = Math.max(80, page.height * 96 * zoom) + 'px';
-      svg.append(svgDefinitions());
+      svg.append(svgDefinitions(page));
       svg.addEventListener('pointerdown', event => {
         if (event.target === svg) {
           selectedId = '';
@@ -887,26 +887,39 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       zoomReadout.textContent = Math.round(zoom * 100) + '%';
     }
 
-    function svgDefinitions() {
+    function svgDefinitions(page) {
       const defs = document.createElementNS(svgNS, 'defs');
-      const markerEnd = document.createElementNS(svgNS, 'marker');
-      markerEnd.id = 'arrow-end';
-      markerEnd.setAttribute('viewBox', '0 0 10 10');
-      markerEnd.setAttribute('refX', '9');
-      markerEnd.setAttribute('refY', '5');
-      markerEnd.setAttribute('markerWidth', '7');
-      markerEnd.setAttribute('markerHeight', '7');
-      markerEnd.setAttribute('orient', 'auto-start-reverse');
-      markerEnd.setAttribute('markerUnits', 'strokeWidth');
-      const endPath = document.createElementNS(svgNS, 'path');
-      endPath.classList.add('connector-arrow');
-      endPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
-      markerEnd.append(endPath);
-
-      const markerStart = markerEnd.cloneNode(true);
-      markerStart.id = 'arrow-start';
-      defs.append(markerStart, markerEnd);
+      const variants = new Set(['m']);
+      page.shapes.filter(shape => shape.kind === 'connector').forEach(shape => {
+        if (numberOr(shape.beginArrow, 0) > 0) {
+          variants.add(arrowSizeKey(shape.beginArrowSize));
+        }
+        if (numberOr(shape.endArrow, 0) > 0) {
+          variants.add(arrowSizeKey(shape.endArrowSize));
+        }
+      });
+      variants.forEach(key => {
+        defs.append(createArrowMarker('start', key), createArrowMarker('end', key));
+      });
       return defs;
+    }
+
+    function createArrowMarker(position, key) {
+      const marker = document.createElementNS(svgNS, 'marker');
+      marker.id = 'arrow-' + position + '-' + key;
+      marker.setAttribute('viewBox', '0 0 10 10');
+      marker.setAttribute('refX', '9');
+      marker.setAttribute('refY', '5');
+      const size = arrowMarkerSize(key);
+      marker.setAttribute('markerWidth', String(size));
+      marker.setAttribute('markerHeight', String(size));
+      marker.setAttribute('orient', 'auto-start-reverse');
+      marker.setAttribute('markerUnits', 'strokeWidth');
+      const path = document.createElementNS(svgNS, 'path');
+      path.classList.add('connector-arrow');
+      path.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
+      marker.append(path);
+      return marker;
     }
 
     function renderShape(page, shape) {
@@ -1119,11 +1132,38 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         node.setAttribute('stroke-dasharray', dashArray);
       }
       if (numberOr(shape.beginArrow, 0) > 0) {
-        node.setAttribute('marker-start', 'url(#arrow-start)');
+        node.setAttribute('marker-start', 'url(#arrow-start-' + arrowSizeKey(shape.beginArrowSize) + ')');
       }
       if (numberOr(shape.endArrow, 0) > 0) {
-        node.setAttribute('marker-end', 'url(#arrow-end)');
+        node.setAttribute('marker-end', 'url(#arrow-end-' + arrowSizeKey(shape.endArrowSize) + ')');
       }
+    }
+
+    function arrowSizeKey(value) {
+      const size = Math.round(numberOr(value, 2));
+      if (size <= 1) {
+        return 's';
+      }
+      if (size >= 4) {
+        return 'xl';
+      }
+      if (size === 3) {
+        return 'l';
+      }
+      return 'm';
+    }
+
+    function arrowMarkerSize(key) {
+      if (key === 's') {
+        return 5;
+      }
+      if (key === 'l') {
+        return 9;
+      }
+      if (key === 'xl') {
+        return 11;
+      }
+      return 7;
     }
 
     function connectorDashArray(shape) {
