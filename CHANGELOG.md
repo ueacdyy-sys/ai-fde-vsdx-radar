@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.34 - 2026-06-12
+
+### Added
+
+- Added semantic support for Visio `ShapeShdwBlur` cells so blurred shadows render in the interactive SVG editor instead of using only hard-edged shadow offsets.
+- Generates SVG blur filters only for pages that actually use blurred shadows, keeping the fast XML/ZIP preview path lightweight.
+- Added regression coverage for direct modern Visio package blur cells, inherited FillStyle blur, master-style inheritance, and legacy Visio XML shadow blur metadata.
+
 ## 0.1.33 - 2026-06-12
 
 ### Added

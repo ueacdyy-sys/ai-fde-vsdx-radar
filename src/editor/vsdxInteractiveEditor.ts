@@ -910,8 +910,26 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         if (spec) {
           defs.append(createFillPattern(spec));
         }
+        const blurSpec = shadowBlurSpec(shape);
+        if (blurSpec && !defs.querySelector('#' + blurSpec.id)) {
+          defs.append(createShadowBlurFilter(blurSpec));
+        }
       });
       return defs;
+    }
+
+    function createShadowBlurFilter(spec) {
+      const filter = document.createElementNS(svgNS, 'filter');
+      filter.id = spec.id;
+      filter.setAttribute('x', '-25%');
+      filter.setAttribute('y', '-25%');
+      filter.setAttribute('width', '150%');
+      filter.setAttribute('height', '150%');
+      filter.setAttribute('primitiveUnits', 'userSpaceOnUse');
+      const blur = document.createElementNS(svgNS, 'feGaussianBlur');
+      blur.setAttribute('stdDeviation', String(spec.radius));
+      filter.append(blur);
+      return filter;
     }
 
     function createArrowMarker(position, key) {
@@ -1068,6 +1086,10 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       const scale = clamp(numberOr(style.scale, 1), 0.2, 3);
       const group = document.createElementNS(svgNS, 'g');
       group.classList.add('shape-shadow');
+      const blurSpec = shadowBlurSpec(shape);
+      if (blurSpec) {
+        group.setAttribute('filter', 'url(#' + blurSpec.id + ')');
+      }
       if (Math.abs(scale - 1) > 0.0001) {
         const cx = x + dx + width / 2;
         const cy = y + dy + height / 2;
@@ -1094,6 +1116,18 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       rect.setAttribute('fill-opacity', String(opacity));
       group.append(rect);
       return group;
+    }
+
+    function shadowBlurSpec(shape) {
+      const style = shape.shadow || {};
+      const radius = round4(clamp(numberOr(style.blur, 0), 0, 1));
+      if (radius <= 0) {
+        return null;
+      }
+      return {
+        id: 'shadow-blur-' + String(Math.round(radius * 1000)),
+        radius
+      };
     }
 
     function shapeCornerRadius(shape, width, height) {

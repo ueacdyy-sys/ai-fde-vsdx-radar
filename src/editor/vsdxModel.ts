@@ -81,6 +81,7 @@ export interface VsdxEditorShadow {
   offsetX: number;
   offsetY: number;
   scale?: number;
+  blur?: number;
 }
 
 export interface VsdxEditorTextBox {
@@ -1858,11 +1859,13 @@ function readShadowStyle(cells: unknown[], refs?: Map<string, number>): VsdxEdit
   const offsetX = readShadowOffsetCell(cells, 'ShapeShdwOffsetX', refs);
   const offsetY = readShadowOffsetCell(cells, 'ShapeShdwOffsetY', refs);
   const scale = readShadowScaleCell(cells, refs);
+  const blur = readShadowBlurCell(cells, refs);
   const hasEvidence = pattern !== undefined
     || show !== undefined
     || offsetX !== undefined
     || offsetY !== undefined
     || scale !== undefined
+    || blur !== undefined
     || readColorCell(cells, 'ShdwForegnd') !== undefined
     || readOpacityCell(cells, 'ShdwForegndTrans', refs) !== undefined;
 
@@ -1875,7 +1878,8 @@ function readShadowStyle(cells: unknown[], refs?: Map<string, number>): VsdxEdit
     opacity: Math.max(0, Math.min(1, opacity)),
     offsetX: offsetX ?? 0.06,
     offsetY: offsetY ?? -0.06,
-    scale
+    scale,
+    blur
   };
 }
 
@@ -1891,6 +1895,15 @@ function readShadowScaleCell(cells: unknown[], refs?: Map<string, number>): numb
     return undefined;
   }
   return value > 10 ? value / 100 : value;
+}
+
+function readShadowBlurCell(cells: unknown[], refs?: Map<string, number>): number | undefined {
+  const cell = cells.find((candidate: any) => candidate?.N === 'ShapeShdwBlur') as any;
+  const value = readCellNumber(cells, 'ShapeShdwBlur', refs) ?? readUnitNumber(cell?.V) ?? readUnitNumber(cell?.F);
+  if (value === undefined || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return Math.max(0, value);
 }
 
 function readOpacityCell(cells: unknown[], name: string, refs?: Map<string, number>): number | undefined {

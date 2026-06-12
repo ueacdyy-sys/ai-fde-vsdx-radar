@@ -547,6 +547,7 @@ async function verifiesShadowStyleCells(): Promise<void> {
       <Cell N="ShapeShdwOffsetX" F="GUARD(0.125)"/>
       <Cell N="ShapeShdwOffsetY" V="-0.2"/>
       <Cell N="ShapeShdwScaleFactor" V="110"/>
+      <Cell N="ShapeShdwBlur" F="GUARD(0.075)"/>
     </Shape>
     <Shape ID="2" NameU="Disabled Shadow">
       <Cell N="PinX" V="5"/>
@@ -568,6 +569,7 @@ async function verifiesShadowStyleCells(): Promise<void> {
   assert.ok(Math.abs((shadowed?.shadow?.offsetX ?? 0) - 0.125) < 0.0001, 'expected formula shadow offset X');
   assert.ok(Math.abs((shadowed?.shadow?.offsetY ?? 0) - -0.2) < 0.0001, 'expected direct shadow offset Y');
   assert.ok(Math.abs((shadowed?.shadow?.scale ?? 0) - 1.1) < 0.0001, 'expected percent shadow scale factor');
+  assert.ok(Math.abs((shadowed?.shadow?.blur ?? 0) - 0.075) < 0.0001, 'expected formula shadow blur');
   assert.strictEqual(disabled?.shadow, undefined, 'expected ShdwPattern=0 to disable shadow rendering');
 }
 
@@ -673,6 +675,7 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
       <Cell N="ShdwForegndTrans" V="30"/>
       <Cell N="ShapeShdwOffsetX" V="0.15"/>
       <Cell N="ShapeShdwOffsetY" V="-0.1"/>
+      <Cell N="ShapeShdwBlur" V="0.11"/>
       <Cell N="BeginArrow" V="4"/>
       <Cell N="EndArrow" V="13"/>
       <Cell N="BeginArrowSize" V="1"/>
@@ -760,12 +763,14 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
   assert.ok(Math.abs((direct?.shadow?.opacity ?? 0) - 0.7) < 0.0001, 'expected page shape shadow opacity to inherit from FillStyle');
   assert.ok(Math.abs((direct?.shadow?.offsetX ?? 0) - 0.15) < 0.0001, 'expected page shape shadow offset X to inherit from FillStyle');
   assert.ok(Math.abs((direct?.shadow?.offsetY ?? 0) - -0.1) < 0.0001, 'expected page shape shadow offset Y to inherit from FillStyle');
+  assert.ok(Math.abs((direct?.shadow?.blur ?? 0) - 0.11) < 0.0001, 'expected page shape shadow blur to inherit from FillStyle');
   assert.ok(Math.abs((direct?.strokeWidth ?? 0) - 0.03) < 0.0001, 'expected page shape stroke width to inherit from LineStyle');
   assert.strictEqual(inheritedFromMaster?.fill, '#123456', 'expected master style fill to reach page instance');
   assert.strictEqual(inheritedFromMaster?.fillBackground, '#f6d365', 'expected master style fill background to reach page instance');
   assert.strictEqual(inheritedFromMaster?.line, '#654321', 'expected master style line to reach page instance');
   assert.ok(Math.abs((inheritedFromMaster?.rounding ?? 0) - 0.17) < 0.0001, 'expected master style rounding to reach page instance');
   assert.strictEqual(inheritedFromMaster?.shadow?.color, '#222222', 'expected master style shadow to reach page instance');
+  assert.ok(Math.abs((inheritedFromMaster?.shadow?.blur ?? 0) - 0.11) < 0.0001, 'expected master style shadow blur to reach page instance');
   assert.strictEqual(inheritedFromMaster?.width, 2, 'expected master width to remain available through effective cells');
   assert.strictEqual(inheritedFromMaster?.height, 1, 'expected master height to remain available through effective cells');
   assert.strictEqual(connector?.kind, 'connector');
@@ -1093,6 +1098,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
             <ShapeShdwOffsetX>0.2</ShapeShdwOffsetX>
             <ShapeShdwOffsetY>-0.1</ShapeShdwOffsetY>
             <ShapeShdwScaleFactor>1.05</ShapeShdwScaleFactor>
+            <ShapeShdwBlur>0.09</ShapeShdwBlur>
           </Fill>
           <TextXForm>
             <TxtPinX>1.5</TxtPinX>
@@ -1163,6 +1169,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.ok(Math.abs((shape.shadow?.offsetX ?? 0) - 0.2) < 0.0001, 'expected legacy XML direct shadow offset X metadata');
   assert.ok(Math.abs((shape.shadow?.offsetY ?? 0) - -0.1) < 0.0001, 'expected legacy XML direct shadow offset Y metadata');
   assert.ok(Math.abs((shape.shadow?.scale ?? 0) - 1.05) < 0.0001, 'expected legacy XML direct shadow scale metadata');
+  assert.ok(Math.abs((shape.shadow?.blur ?? 0) - 0.09) < 0.0001, 'expected legacy XML direct shadow blur metadata');
   assert.ok(shape.textBox, 'expected legacy XML text box metadata');
   assert.strictEqual(shape.textStyle?.color, '#445566', 'expected legacy XML text color metadata');
   assert.ok(Math.abs((shape.textStyle?.fontSize ?? 0) - (14 / 72)) < 0.0001, 'expected legacy XML text size metadata');
@@ -1247,6 +1254,7 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
       <Cell N="ShdwForegndTrans" V="45"/>
       <Cell N="ShapeShdwOffsetX" V="0.08"/>
       <Cell N="ShapeShdwOffsetY" V="-0.12"/>
+      <Cell N="ShapeShdwBlur" V="0.07"/>
       <Cell N="TextBkgnd" V="#f0f0f0"/>
       <Cell N="TextBkgndTrans" V="20"/>
       <Cell N="VerticalAlign" V="0"/>
@@ -1293,6 +1301,7 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
   assert.ok(Math.abs((shape?.shadow?.opacity ?? 0) - 0.55) < 0.0001, 'expected legacy XML FillStyle shadow opacity to be applied');
   assert.ok(Math.abs((shape?.shadow?.offsetX ?? 0) - 0.08) < 0.0001, 'expected legacy XML FillStyle shadow offset X to be applied');
   assert.ok(Math.abs((shape?.shadow?.offsetY ?? 0) - -0.12) < 0.0001, 'expected legacy XML FillStyle shadow offset Y to be applied');
+  assert.ok(Math.abs((shape?.shadow?.blur ?? 0) - 0.07) < 0.0001, 'expected legacy XML FillStyle shadow blur to be applied');
   assert.ok(Math.abs((shape?.strokeWidth ?? 0) - 0.04) < 0.0001, 'expected legacy XML line weight to be applied');
   assert.strictEqual(shape?.textStyle?.color, '#123456', 'expected legacy XML TextStyle color to be applied');
   assert.ok(Math.abs((shape?.textStyle?.fontSize ?? 0) - (16 / 72)) < 0.0001, 'expected legacy XML TextStyle size to be applied');
