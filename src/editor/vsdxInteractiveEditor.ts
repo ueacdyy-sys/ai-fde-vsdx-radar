@@ -970,6 +970,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         path.setAttribute('stroke-linecap', lineCap(shape));
         path.setAttribute('stroke-linejoin', 'round');
         applyPaintOpacity(path, shape);
+        applyLinePattern(path, shape);
         group.append(path);
       } else {
         const rect = document.createElementNS(svgNS, 'rect');
@@ -984,6 +985,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         rect.setAttribute('stroke-width', String(Math.max(0.012, numberOr(shape.strokeWidth, 0.02))));
         rect.setAttribute('stroke-linecap', lineCap(shape));
         applyPaintOpacity(rect, shape);
+        applyLinePattern(rect, shape);
         group.append(rect);
       }
 
@@ -1199,10 +1201,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
     }
 
     function applyConnectorStyle(node, shape) {
-      const dashArray = connectorDashArray(shape);
-      if (dashArray) {
-        node.setAttribute('stroke-dasharray', dashArray);
-      }
+      applyLinePattern(node, shape);
       if (numberOr(shape.beginArrow, 0) > 0) {
         node.setAttribute('marker-start', 'url(#arrow-start-' + arrowSizeKey(shape.beginArrowSize) + ')');
       }
@@ -1238,7 +1237,14 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       return 7;
     }
 
-    function connectorDashArray(shape) {
+    function applyLinePattern(node, shape) {
+      const dashArray = lineDashArray(shape);
+      if (dashArray) {
+        node.setAttribute('stroke-dasharray', dashArray);
+      }
+    }
+
+    function lineDashArray(shape) {
       const pattern = Math.round(numberOr(shape.linePattern, 1));
       const stroke = Math.max(0.018, numberOr(shape.strokeWidth, 0.025));
       if (pattern === 2) {

@@ -14,6 +14,7 @@ async function main(): Promise<void> {
   await verifiesTextBoxTransformCells();
   await verifiesColorFormulaAndNoPaint();
   await verifiesPaintTransparencyCells();
+  await verifiesShapeLinePatternCells();
   await verifiesShadowStyleCells();
   await verifiesTextStyleCells();
   await verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle();
@@ -429,6 +430,31 @@ async function verifiesPaintTransparencyCells(): Promise<void> {
   assert.ok(Math.abs((shape.fillOpacity ?? 0) - 0.6) < 0.0001, 'expected fill transparency to become fill opacity');
   assert.ok(Math.abs((shape.strokeOpacity ?? 0) - 0.25) < 0.0001, 'expected line transparency to become stroke opacity');
   assert.ok(Math.abs((connector.strokeOpacity ?? 0) - 0.75) < 0.0001, 'expected formula line transparency to become connector stroke opacity');
+}
+
+async function verifiesShapeLinePatternCells(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Dashed Shape">
+      <Cell N="PinX" V="2"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="LinePattern" F="GUARD(3)"/>
+      <Cell N="LineWeight" V="0.05"/>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'shape-line-pattern-fixture.vsdx');
+  const shape = diagram.pages[0]?.shapes[0];
+  assert.ok(shape, 'expected dashed shape to be parsed');
+  assert.strictEqual(shape.kind, 'shape');
+  assert.strictEqual(shape.linePattern, 3, 'expected shape line pattern metadata');
+  assert.ok(Math.abs((shape.strokeWidth ?? 0) - 0.05) < 0.0001, 'expected shape line weight metadata');
 }
 
 async function verifiesShadowStyleCells(): Promise<void> {
@@ -938,7 +964,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
             <LocPinX>1</LocPinX>
             <LocPinY>0.5</LocPinY>
           </XForm>
-          <Line><LineCap>2</LineCap><BeginArrowSize>1</BeginArrowSize><EndArrowSize>4</EndArrowSize></Line>
+          <Line><LinePattern>2</LinePattern><LineCap>2</LineCap><BeginArrowSize>1</BeginArrowSize><EndArrowSize>4</EndArrowSize></Line>
           <Fill>
             <ShdwPattern>1</ShdwPattern>
             <ShdwForegnd>RGB(10,20,30)</ShdwForegnd>
@@ -990,6 +1016,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.strictEqual(shape.editable, true);
   assert.strictEqual(shape.text, 'Legacy text');
   assert.strictEqual(shape.lineCap, 2, 'expected legacy XML direct line cap metadata');
+  assert.strictEqual(shape.linePattern, 2, 'expected legacy XML direct line pattern metadata');
   assert.strictEqual(shape.beginArrowSize, 1, 'expected legacy XML direct begin arrow size metadata');
   assert.strictEqual(shape.endArrowSize, 4, 'expected legacy XML direct end arrow size metadata');
   assert.strictEqual(shape.shadow?.color, '#0a141e', 'expected legacy XML direct shadow color metadata');

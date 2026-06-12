@@ -2,6 +2,17 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.28 - 2026-06-12
+
+### Fixed
+
+- Applied Visio `LinePattern` dash semantics to normal shape outlines, not only connector lines, so dashed boundaries, annotation boxes, and styled shape borders render more faithfully in the interactive editor.
+- Reused one SVG dash-pattern path for shapes and connectors to keep line semantics consistent without adding a slower rendering path.
+
+### Added
+
+- Added regression coverage for shape line patterns from direct modern Visio package cells, StyleSheet inheritance, and legacy Visio XML line metadata.
+
 ## 0.1.27 - 2026-06-12
 
 ### Added
