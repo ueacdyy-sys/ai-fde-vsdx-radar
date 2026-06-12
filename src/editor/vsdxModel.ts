@@ -114,6 +114,7 @@ export interface VsdxEditorTextStyle {
   horizontalAlign?: 'left' | 'center' | 'right';
   verticalAlign?: 'top' | 'middle' | 'bottom';
   textPosAfterBullet?: number;
+  lineSpacing?: number;
   indents?: VsdxEditorTextIndents;
   margins?: VsdxEditorTextMargins;
   background?: string;
@@ -266,6 +267,7 @@ const legacyXmlCellNames = new Set([
   'IndFirst',
   'IndLeft',
   'IndRight',
+  'SpLine',
   'VerticalAlign',
   'LeftMargin',
   'RightMargin',
@@ -356,6 +358,7 @@ const textStyleCellNames = new Set([
   'IndFirst',
   'IndLeft',
   'IndRight',
+  'SpLine',
   'VerticalAlign',
   'LeftMargin',
   'RightMargin',
@@ -1739,6 +1742,8 @@ function readTextStyle(
   const verticalAlign = readVerticalAlign(cells, refs);
   const textPosAfterBullet = readTextPositionCell(paragraphCells, 'TextPosAfterBullet', refs)
     ?? readTextPositionCell(cells, 'TextPosAfterBullet', refs);
+  const lineSpacing = readLineSpacingCell(paragraphCells, refs)
+    ?? readLineSpacingCell(cells, refs);
   const indents = readParagraphIndents(paragraphCells, cells, refs);
   const margins = readTextMargins(cells, refs);
   const background = readColorCell(cells, 'TextBkgnd');
@@ -1778,6 +1783,9 @@ function readTextStyle(
   }
   if (textPosAfterBullet !== undefined) {
     style.textPosAfterBullet = textPosAfterBullet;
+  }
+  if (lineSpacing !== undefined) {
+    style.lineSpacing = lineSpacing;
   }
   if (indents) {
     style.indents = indents;
@@ -1870,6 +1878,15 @@ function readTextPositionCell(cells: unknown[], name: string, refs?: Map<string,
     return undefined;
   }
   return Math.max(0, value);
+}
+
+function readLineSpacingCell(cells: unknown[], refs?: Map<string, number>): number | undefined {
+  const cell = cells.find((candidate: any) => candidate?.N === 'SpLine') as any;
+  const value = readCellNumber(cells, 'SpLine', refs) ?? readUnitNumber(cell?.V) ?? readUnitNumber(cell?.F);
+  if (value === undefined || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return value;
 }
 
 function readParagraphIndents(

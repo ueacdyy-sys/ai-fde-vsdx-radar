@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.45 - 2026-06-12
+
+### Added
+
+- Added Visio paragraph line spacing metadata (`SpLine`) so multi-line labels can preserve absolute or font-relative line spacing in SVG preview.
+- Preserves line spacing inheritance through direct shape cells, Paragraph sections, TextStyle StyleSheets, master-shape inheritance, formula cells, and legacy Visio XML files.
+- Added regression coverage for modern package direct/Paragraph/StyleSheet line spacing and legacy XML direct/TextStyle line spacing.
+
 ## 0.1.44 - 2026-06-12
 
 ### Added

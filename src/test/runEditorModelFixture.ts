@@ -732,6 +732,7 @@ async function verifiesTextStyleCells(): Promise<void> {
       <Cell N="IndFirst" V="0.05"/>
       <Cell N="IndLeft" V="0.06"/>
       <Cell N="IndRight" V="0.07"/>
+      <Cell N="SpLine" V="-1.25"/>
       <Cell N="TextPosAfterBullet" V="0.2"/>
       <Cell N="TextBkgnd" V="#ffeeaa"/>
       <Cell N="TextBkgndTrans" V="25"/>
@@ -746,7 +747,7 @@ async function verifiesTextStyleCells(): Promise<void> {
         <Row IX="0"><Cell N="Color" F="RGB(17,34,51)"/><Cell N="Font" V="7"/><Cell N="Size" V="0.25" U="IN"/><Cell N="Style" F="GUARD(2)"/><Cell N="Pos" F="GUARD(2)"/><Cell N="DoubleUnderline" F="GUARD(1)"/><Cell N="DoubleStrikethrough" F="GUARD(1)"/></Row>
       </Section>
       <Section N="Paragraph" IX="0">
-        <Row IX="0"><Cell N="HAlign" V="2"/><Cell N="IndFirst" F="GUARD(-0.04)"/><Cell N="IndLeft" F="GUARD(0.15)"/><Cell N="IndRight" F="GUARD(0.16)"/><Cell N="TextPosAfterBullet" F="GUARD(0.21)"/></Row>
+        <Row IX="0"><Cell N="HAlign" V="2"/><Cell N="IndFirst" F="GUARD(-0.04)"/><Cell N="IndLeft" F="GUARD(0.15)"/><Cell N="IndRight" F="GUARD(0.16)"/><Cell N="SpLine" F="GUARD(0.18)"/><Cell N="TextPosAfterBullet" F="GUARD(0.21)"/></Row>
       </Section>
       <Text>Character text style</Text>
     </Shape>
@@ -773,6 +774,7 @@ async function verifiesTextStyleCells(): Promise<void> {
   assert.ok(Math.abs((direct?.textStyle?.indents?.first ?? 0) - 0.05) < 0.0001, 'expected direct first line indent');
   assert.ok(Math.abs((direct?.textStyle?.indents?.left ?? 0) - 0.06) < 0.0001, 'expected direct left paragraph indent');
   assert.ok(Math.abs((direct?.textStyle?.indents?.right ?? 0) - 0.07) < 0.0001, 'expected direct right paragraph indent');
+  assert.ok(Math.abs((direct?.textStyle?.lineSpacing ?? 0) - -1.25) < 0.0001, 'expected direct paragraph line spacing percentage');
   assert.ok(Math.abs((direct?.textStyle?.textPosAfterBullet ?? 0) - 0.2) < 0.0001, 'expected direct text position after bullet');
   assert.strictEqual(direct?.textStyle?.background, '#ffeeaa', 'expected direct text background to be parsed');
   assert.ok(Math.abs((direct?.textStyle?.backgroundOpacity ?? 0) - 0.75) < 0.0001, 'expected text background transparency to become opacity');
@@ -789,6 +791,7 @@ async function verifiesTextStyleCells(): Promise<void> {
   assert.ok(Math.abs((character?.textStyle?.indents?.first ?? 0) - -0.04) < 0.0001, 'expected paragraph row first line indent');
   assert.ok(Math.abs((character?.textStyle?.indents?.left ?? 0) - 0.15) < 0.0001, 'expected paragraph row left indent');
   assert.ok(Math.abs((character?.textStyle?.indents?.right ?? 0) - 0.16) < 0.0001, 'expected paragraph row right indent');
+  assert.ok(Math.abs((character?.textStyle?.lineSpacing ?? 0) - 0.18) < 0.0001, 'expected paragraph row absolute line spacing');
   assert.ok(Math.abs((character?.textStyle?.textPosAfterBullet ?? 0) - 0.21) < 0.0001, 'expected paragraph row text position after bullet');
 }
 
@@ -819,6 +822,7 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
       <Cell N="RightMargin" V="0.08"/>
       <Cell N="IndLeft" V="0.12"/>
       <Cell N="IndRight" V="0.13"/>
+      <Cell N="SpLine" V="-1.1"/>
       <Cell N="TextPosAfterBullet" V="0.18"/>
       <Section N="Character" IX="0"><Row IX="0"><Cell N="Font" V="11"/><Cell N="Style" V="3"/><Cell N="Pos" V="1"/><Cell N="DblUnderline" V="1"/><Cell N="Strikethru" V="1"/></Row></Section>
       <Section N="Paragraph" IX="0"><Row IX="0"><Cell N="HAlign" V="0"/><Cell N="IndFirst" V="0.11"/></Row></Section>
@@ -926,6 +930,7 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
   assert.ok(Math.abs((direct?.textStyle?.indents?.first ?? 0) - 0.11) < 0.0001, 'expected page shape first line indent to inherit from TextStyle');
   assert.ok(Math.abs((direct?.textStyle?.indents?.left ?? 0) - 0.12) < 0.0001, 'expected page shape left indent to inherit from TextStyle fallback cells');
   assert.ok(Math.abs((direct?.textStyle?.indents?.right ?? 0) - 0.13) < 0.0001, 'expected page shape right indent to inherit from TextStyle fallback cells');
+  assert.ok(Math.abs((direct?.textStyle?.lineSpacing ?? 0) - -1.1) < 0.0001, 'expected page shape line spacing to inherit from TextStyle');
   assert.ok(Math.abs((direct?.textStyle?.textPosAfterBullet ?? 0) - 0.18) < 0.0001, 'expected page shape text position after bullet to inherit from TextStyle');
   assert.strictEqual(direct?.linePattern, 2, 'expected page shape line pattern to inherit from LineStyle');
   assert.strictEqual(direct?.lineCap, 1, 'expected page shape line cap to inherit from LineStyle');
@@ -949,6 +954,7 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
   assert.ok(Math.abs((inheritedFromMaster?.textStyle?.indents?.first ?? 0) - 0.11) < 0.0001, 'expected master style first line indent to reach page instance');
   assert.ok(Math.abs((inheritedFromMaster?.textStyle?.indents?.left ?? 0) - 0.12) < 0.0001, 'expected master style left indent to reach page instance');
   assert.ok(Math.abs((inheritedFromMaster?.textStyle?.indents?.right ?? 0) - 0.13) < 0.0001, 'expected master style right indent to reach page instance');
+  assert.ok(Math.abs((inheritedFromMaster?.textStyle?.lineSpacing ?? 0) - -1.1) < 0.0001, 'expected master style line spacing to reach page instance');
   assert.ok(Math.abs((inheritedFromMaster?.textStyle?.textPosAfterBullet ?? 0) - 0.18) < 0.0001, 'expected master style text position after bullet to reach page instance');
   assert.strictEqual(inheritedFromMaster?.width, 2, 'expected master width to remain available through effective cells');
   assert.strictEqual(inheritedFromMaster?.height, 1, 'expected master height to remain available through effective cells');
@@ -1305,6 +1311,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
             <IndFirst>-0.02</IndFirst>
             <IndLeft>0.09</IndLeft>
             <IndRight>0.1</IndRight>
+            <SpLine>-1.4</SpLine>
           </Para>
           <Char IX="0">
             <Color>RGB(68,85,102)</Color>
@@ -1377,6 +1384,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.ok(Math.abs((shape.textStyle?.indents?.first ?? 0) - -0.02) < 0.0001, 'expected legacy XML first line indent metadata');
   assert.ok(Math.abs((shape.textStyle?.indents?.left ?? 0) - 0.09) < 0.0001, 'expected legacy XML left indent metadata');
   assert.ok(Math.abs((shape.textStyle?.indents?.right ?? 0) - 0.1) < 0.0001, 'expected legacy XML right indent metadata');
+  assert.ok(Math.abs((shape.textStyle?.lineSpacing ?? 0) - -1.4) < 0.0001, 'expected legacy XML line spacing metadata');
   assert.ok(Math.abs((shape.textStyle?.margins?.left ?? 0) - 0.03) < 0.0001, 'expected legacy XML left text margin metadata');
   assert.ok(Math.abs((shape.textStyle?.margins?.right ?? 0) - 0.04) < 0.0001, 'expected legacy XML right text margin metadata');
   assert.ok(Math.abs((shape.textStyle?.margins?.top ?? 0) - 0.05) < 0.0001, 'expected legacy XML top text margin metadata');
@@ -1517,6 +1525,7 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
       <Cell N="BottomMargin" V="0.08"/>
       <Cell N="IndLeft" V="0.17"/>
       <Cell N="IndRight" V="0.18"/>
+      <Cell N="SpLine" V="0.19"/>
       <Cell N="TextPosAfterBullet" V="0.14"/>
       <Section N="Character" IX="0"><Row IX="0"><Cell N="Color" V="#123456"/><Cell N="Font" V="8"/><Cell N="Size" V="16" U="PT"/><Cell N="Style" V="4"/><Cell N="Pos" V="2"/><Cell N="DblUnderline" V="1"/><Cell N="Strikethru" V="1"/></Row></Section>
       <Section N="Paragraph" IX="0"><Row IX="0"><Cell N="HAlign" V="1"/><Cell N="IndFirst" V="-0.05"/></Row></Section>
@@ -1591,6 +1600,7 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
   assert.ok(Math.abs((shape?.textStyle?.indents?.first ?? 0) - -0.05) < 0.0001, 'expected legacy XML TextStyle first line indent to be applied');
   assert.ok(Math.abs((shape?.textStyle?.indents?.left ?? 0) - 0.17) < 0.0001, 'expected legacy XML TextStyle left indent to be applied');
   assert.ok(Math.abs((shape?.textStyle?.indents?.right ?? 0) - 0.18) < 0.0001, 'expected legacy XML TextStyle right indent to be applied');
+  assert.ok(Math.abs((shape?.textStyle?.lineSpacing ?? 0) - 0.19) < 0.0001, 'expected legacy XML TextStyle line spacing to be applied');
   assert.ok(Math.abs((shape?.textStyle?.margins?.top ?? 0) - 0.07) < 0.0001, 'expected legacy XML TextStyle top margin to be applied');
   assert.ok(Math.abs((shape?.textStyle?.margins?.bottom ?? 0) - 0.08) < 0.0001, 'expected legacy XML TextStyle bottom margin to be applied');
   assert.ok(Math.abs((shape?.textStyle?.textPosAfterBullet ?? 0) - 0.14) < 0.0001, 'expected legacy XML TextStyle text position after bullet to be applied');

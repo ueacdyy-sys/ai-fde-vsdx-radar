@@ -1032,7 +1032,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         const fontSize = textFontSize(shape, contentBox);
         text.setAttribute('font-size', String(fontSize));
         const lines = String(shape.text).replace(/\\r/g, '').split('\\n').filter(line => line.length > 0);
-        const lineHeight = Math.min(Math.max(fontSize * 1.2, 0.08), Math.max(0.08, contentBox.height / Math.max(2, lines.length + 1)));
+        const lineHeight = textLineHeight(shape, fontSize, contentBox, lines.length);
         const textPosition = resolveTextPosition(shape, contentBox, lines.length, lineHeight);
         text.setAttribute('x', String(textPosition.x));
         text.setAttribute('y', String(textPosition.y));
@@ -1314,6 +1314,19 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       const baseline = shape.textStyle && shape.textStyle.baseline;
       const scale = baseline === 'superscript' || baseline === 'subscript' ? 0.75 : 1;
       return clamp(numberOr(shape.textStyle && shape.textStyle.fontSize, fallback) * scale, 0.04, Math.max(0.04, textBox.height * 0.75));
+    }
+
+    function textLineHeight(shape, fontSize, textBox, lineCount) {
+      const style = shape.textStyle || {};
+      const spacing = numberOr(style.lineSpacing, NaN);
+      const fallback = fontSize * 1.2;
+      let requested = fallback;
+      if (Number.isFinite(spacing) && Math.abs(spacing) > 0.0001) {
+        requested = spacing > 0 ? spacing : fontSize * Math.abs(spacing);
+      }
+      const minimum = Math.max(fontSize * 0.85, 0.08);
+      const maximum = Math.max(minimum, textBox.height / Math.max(1, Math.min(5, lineCount)));
+      return clamp(requested, minimum, maximum);
     }
 
     function resolveTextPosition(shape, textBox, lineCount, lineHeight) {
