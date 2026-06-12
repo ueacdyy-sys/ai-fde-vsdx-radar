@@ -2,6 +2,18 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.19 - 2026-06-12
+
+### Fixed
+
+- Fixed semantic preview and lightweight editing for hand-authored Visio files whose core ShapeSheet transform cells only contain formulas (`F`) without cached numeric values (`V`).
+- Formula-only shape position, size, stroke width, connector endpoints, connector arrows, and page-relative references such as `ThePage!PageWidth` are now resolved on the fast local XML/ZIP path.
+- Grouped shape coordinate transforms and grouped write-back size preservation now use the same formula-aware cell reader, reducing read-only fallbacks for manually created diagrams.
+
+### Added
+
+- Added editor model regression coverage for formula-only transform cells, connector endpoints, local `Width` references, unit formulas, and numeric write-back after edits.
+
 ## 0.1.18 - 2026-06-12
 
 ### Changed

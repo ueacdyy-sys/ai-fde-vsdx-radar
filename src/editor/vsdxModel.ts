@@ -116,6 +116,7 @@ interface EditorShapeContext {
   styleSheets: StyleSheetContext;
   imageDataUriByRelId: Map<string, string>;
   readOnlyReason?: string;
+  formulaRefs?: Map<string, number>;
 }
 
 interface MasterShapeEntry {
@@ -283,18 +284,21 @@ export async function readVsdxDiagram(bytes: Buffer, sourceName: string): Promis
     const parsed = xmlParser.parse(xml);
     const pageContents = parsed.PageContents ?? parsed['PageContents'];
     const imageDataUriByRelId = await readPageImageDataUris(zip, entry);
+    const pageWidth = validPageSize(meta?.width, 8);
+    const pageHeight = validPageSize(meta?.height, 6);
     const shapes = collectEditorShapes(toArray(pageContents?.Shapes?.Shape), {
       masterShapes,
       styleSheets,
-      imageDataUriByRelId
+      imageDataUriByRelId,
+      formulaRefs: createPageFormulaRefs(pageWidth, pageHeight)
     });
     const unsupportedCount = shapes.filter(shape => !shape.editable).length;
     const page = {
       id: meta?.id ?? entry,
       entry,
       name: meta?.name ?? entry.match(/page(\d+)\.xml$/i)?.[1] ?? entry,
-      width: validPageSize(meta?.width, 8),
-      height: validPageSize(meta?.height, 6),
+      width: pageWidth,
+      height: pageHeight,
       shapes
     };
     const unsupportedNote = unsupportedCount > 0
@@ -347,18 +351,21 @@ function readLegacyXmlDiagram(bytes: Buffer, sourceName: string): VsdxEditorDiag
   const masterShapes = readLegacyXmlMasterShapes(document);
   const pageResults = toArray(document?.Pages?.Page).map((page, index) => {
     const normalized = normalizeLegacyXmlPage(page, index);
+    const pageWidth = validPageSize(normalized.width, 8);
+    const pageHeight = validPageSize(normalized.height, 6);
     const shapes = collectEditorShapes(toArray(normalized.pageContents?.Shapes?.Shape), {
       masterShapes,
       styleSheets,
-      imageDataUriByRelId: new Map()
+      imageDataUriByRelId: new Map(),
+      formulaRefs: createPageFormulaRefs(pageWidth, pageHeight)
     });
     const unsupportedCount = shapes.filter(shape => !shape.editable).length;
     const pageResult = {
       id: normalized.id,
       entry: normalized.entry,
       name: normalized.name,
-      width: validPageSize(normalized.width, 8),
-      height: validPageSize(normalized.height, 6),
+      width: pageWidth,
+      height: pageHeight,
       shapes
     };
     const unsupportedNote = unsupportedCount > 0
@@ -795,11 +802,12 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const masterStyleCells = styleCellsForShape(masterShape, context.styleSheets);
   const pageStyleCells = styleCellsForShape(shape, context.styleSheets);
   const effectiveCells = mergeEffectiveCellLayers(masterStyleCells, masterCells, pageStyleCells, cells);
-  const lineWeight = readCellNumber(effectiveCells, 'LineWeight');
-  const linePattern = readCellNumber(effectiveCells, 'LinePattern');
-  const beginArrow = readCellNumber(effectiveCells, 'BeginArrow');
-  const endArrow = readCellNumber(effectiveCells, 'EndArrow');
-  const angle = readCellNumber(effectiveCells, 'Angle') ?? 0;
+  const shapeFormulaRefs = createShapeFormulaRefs(effectiveCells, context.formulaRefs);
+  const lineWeight = readCellNumber(effectiveCells, 'LineWeight', shapeFormulaRefs);
+  const linePattern = readCellNumber(effectiveCells, 'LinePattern', shapeFormulaRefs);
+  const beginArrow = readCellNumber(effectiveCells, 'BeginArrow', shapeFormulaRefs);
+  const endArrow = readCellNumber(effectiveCells, 'EndArrow', shapeFormulaRefs);
+  const angle = readCellNumber(effectiveCells, 'Angle', shapeFormulaRefs) ?? 0;
   const hasChildShapes = toArray(shape?.Shapes?.Shape).length > 0;
   const isConnector = isConnectorShape(shape) || isConnectorShape(masterShape);
   const text = readShapeText(shape) || readShapeText(masterShape);
@@ -818,14 +826,14 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   };
 
   if (isConnector) {
-    const beginX = readCellNumber(cells, 'BeginX');
-    const beginY = readCellNumber(cells, 'BeginY');
-    const endX = readCellNumber(cells, 'EndX');
-    const endY = readCellNumber(cells, 'EndY');
-    const pinX = readCellNumber(cells, 'PinX');
-    const pinY = readCellNumber(cells, 'PinY');
-    const width = readCellNumber(effectiveCells, 'Width');
-    const height = readCellNumber(effectiveCells, 'Height');
+    const beginX = readCellNumber(cells, 'BeginX', shapeFormulaRefs);
+    const beginY = readCellNumber(cells, 'BeginY', shapeFormulaRefs);
+    const endX = readCellNumber(cells, 'EndX', shapeFormulaRefs);
+    const endY = readCellNumber(cells, 'EndY', shapeFormulaRefs);
+    const pinX = readCellNumber(cells, 'PinX', shapeFormulaRefs);
+    const pinY = readCellNumber(cells, 'PinY', shapeFormulaRefs);
+    const width = readCellNumber(effectiveCells, 'Width', shapeFormulaRefs);
+    const height = readCellNumber(effectiveCells, 'Height', shapeFormulaRefs);
     const geometryPath = width !== undefined && height !== undefined
       ? compileGeometryPath(shape, masterShape, width, height)
       : undefined;
@@ -849,10 +857,10 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     };
   }
 
-  const pinX = readCellNumber(cells, 'PinX');
-  const pinY = readCellNumber(cells, 'PinY');
-  const width = readCellNumber(effectiveCells, 'Width');
-  const height = readCellNumber(effectiveCells, 'Height');
+  const pinX = readCellNumber(cells, 'PinX', shapeFormulaRefs);
+  const pinY = readCellNumber(cells, 'PinY', shapeFormulaRefs);
+  const width = readCellNumber(effectiveCells, 'Width', shapeFormulaRefs);
+  const height = readCellNumber(effectiveCells, 'Height', shapeFormulaRefs);
   const geometryPath = width !== undefined && height !== undefined
     ? compileGeometryPath(shape, masterShape, width, height)
     : undefined;
@@ -1055,8 +1063,9 @@ function resolveShapeWriteSize(
   }
 
   const localCells = shapeTransformCells(shape);
-  const localWidth = readCellNumber(localCells, 'Width');
-  const localHeight = readCellNumber(localCells, 'Height');
+  const formulaRefs = createShapeFormulaRefs(localCells);
+  const localWidth = readCellNumber(localCells, 'Width', formulaRefs);
+  const localHeight = readCellNumber(localCells, 'Height', formulaRefs);
   if (localWidth === undefined || localHeight === undefined) {
     return { width: requestedWidth, height: requestedHeight };
   }
@@ -1410,15 +1419,70 @@ function mimeTypeForImageTarget(target: string): string | undefined {
   }
 }
 
-function readCellNumber(cells: unknown[], name: string): number | undefined {
+function readCellNumber(cells: unknown[], name: string, refs?: Map<string, number>, seen = new Set<string>()): number | undefined {
   const cell = cells.find((candidate: any) => candidate?.N === name) as any;
   const value = Number(cell?.V);
-  return Number.isFinite(value) ? value : undefined;
+  if (Number.isFinite(value)) {
+    return value;
+  }
+  const formulaRefs = refs ? new Map(refs) : new Map<string, number>();
+  const key = name.toLowerCase();
+  if (!formulaRefs.has(key) && !seen.has(key)) {
+    seen.add(key);
+    addFormulaRefsForCells(cells, formulaRefs, seen);
+  }
+  return readFormulaNumber(cell?.F, formulaRefs);
+}
+
+function readFormulaNumber(formula: unknown, refs?: Map<string, number>): number | undefined {
+  const formulaRefs = refs ? new Map(refs) : new Map<string, number>();
+  return evaluateFormula(formula, {
+    targetWidth: formulaRefs.get('width') ?? formulaRefs.get('thepage.pagewidth') ?? 1,
+    targetHeight: formulaRefs.get('height') ?? formulaRefs.get('thepage.pageheight') ?? 1,
+    sourceWidth: formulaRefs.get('width') ?? 1,
+    sourceHeight: formulaRefs.get('height') ?? 1,
+    scaleX: 1,
+    scaleY: 1,
+    scaleAverage: 1,
+    refs: formulaRefs
+  });
 }
 
 function readCellString(cells: unknown[], name: string): string | undefined {
   const cell = cells.find((candidate: any) => candidate?.N === name) as any;
   return typeof cell?.V === 'string' && cell.V.trim().length > 0 ? cell.V : undefined;
+}
+
+function createShapeFormulaRefs(cells: unknown[], baseRefs?: Map<string, number>): Map<string, number> {
+  const refs = baseRefs ? new Map(baseRefs) : new Map<string, number>();
+  addFormulaRefsForCells(cells, refs);
+  return refs;
+}
+
+function addFormulaRefsForCells(cells: unknown[], refs: Map<string, number>, seen = new Set<string>()): void {
+  for (const cell of cells as any[]) {
+    if (typeof cell?.N !== 'string') {
+      continue;
+    }
+    const key = cell.N.toLowerCase();
+    if (refs.has(key) || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    const value = readCellNumber(cells, cell.N, refs, seen);
+    if (value !== undefined) {
+      refs.set(key, value);
+    }
+  }
+}
+
+function createPageFormulaRefs(pageWidth: number, pageHeight: number): Map<string, number> {
+  const refs = new Map<string, number>();
+  refs.set('pagewidth', pageWidth);
+  refs.set('pageheight', pageHeight);
+  refs.set('thepage.pagewidth', pageWidth);
+  refs.set('thepage.pageheight', pageHeight);
+  return refs;
 }
 
 function readFillColor(cells: unknown[]): string {
@@ -2320,6 +2384,7 @@ function evaluateFormula(formula: unknown, context: GeometryContext): number | u
 
   const normalized = trimmed
     .replace(/^=/, '')
+    .replace(/!/g, '.')
     .replace(/(\d+(?:\.\d+)?|\.\d+)(?:DL|IN|MM|CM|PT|FT)\b/gi, '$1');
   const tokens = tokenizeFormula(normalized);
   if (tokens.length === 0) {
@@ -2627,9 +2692,10 @@ function transformShapeCoordinates(shape: any, parentTransform: PointTransform):
   const cells = toArray(shape?.Cell);
   const transformedCells = cells.map((cell: any) => ({ ...cell }));
   const localToPageTransform = createLocalToPageTransform(shape, parentTransform);
-  transformCellPointPair(transformedCells, parentTransform, 'PinX', 'PinY');
-  transformCellPointPair(transformedCells, parentTransform, 'BeginX', 'BeginY');
-  transformCellPointPair(transformedCells, parentTransform, 'EndX', 'EndY');
+  const formulaRefs = createShapeFormulaRefs(cells);
+  transformCellPointPair(transformedCells, parentTransform, 'PinX', 'PinY', formulaRefs);
+  transformCellPointPair(transformedCells, parentTransform, 'BeginX', 'BeginY', formulaRefs);
+  transformCellPointPair(transformedCells, parentTransform, 'EndX', 'EndY', formulaRefs);
 
   const pageShape = {
     ...shape,
@@ -2643,9 +2709,15 @@ function transformShapeCoordinates(shape: any, parentTransform: PointTransform):
   return pageShape;
 }
 
-function transformCellPointPair(cells: any[], transform: PointTransform, xName: string, yName: string): void {
-  const x = readCellNumber(cells, xName);
-  const y = readCellNumber(cells, yName);
+function transformCellPointPair(
+  cells: any[],
+  transform: PointTransform,
+  xName: string,
+  yName: string,
+  formulaRefs?: Map<string, number>
+): void {
+  const x = readCellNumber(cells, xName, formulaRefs);
+  const y = readCellNumber(cells, yName, formulaRefs);
   if (x === undefined || y === undefined) {
     return;
   }
@@ -2657,17 +2729,18 @@ function transformCellPointPair(cells: any[], transform: PointTransform, xName: 
 
 function createLocalToPageTransform(shape: any, parentTransform?: PointTransform): PointTransform | undefined {
   const cells = shapeTransformCells(shape);
-  const pinX = readCellNumber(cells, 'PinX');
-  const pinY = readCellNumber(cells, 'PinY');
-  const locPinX = readLocPin(cells, 'LocPinX', 'Width');
-  const locPinY = readLocPin(cells, 'LocPinY', 'Height');
+  const formulaRefs = createShapeFormulaRefs(cells);
+  const pinX = readCellNumber(cells, 'PinX', formulaRefs);
+  const pinY = readCellNumber(cells, 'PinY', formulaRefs);
+  const locPinX = readLocPin(cells, 'LocPinX', 'Width', formulaRefs);
+  const locPinY = readLocPin(cells, 'LocPinY', 'Height', formulaRefs);
   if ([pinX, pinY, locPinX, locPinY].some(value => value === undefined)) {
     return parentTransform;
   }
 
-  const angle = readCellNumber(cells, 'Angle') ?? 0;
-  const flipX = readCellNumber(cells, 'FlipX') === 1;
-  const flipY = readCellNumber(cells, 'FlipY') === 1;
+  const angle = readCellNumber(cells, 'Angle', formulaRefs) ?? 0;
+  const flipX = readCellNumber(cells, 'FlipX', formulaRefs) === 1;
+  const flipY = readCellNumber(cells, 'FlipY', formulaRefs) === 1;
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
 
@@ -2792,13 +2865,13 @@ function normalizeShapeBounds(
   setCellNumber(transformedCells, 'Angle', 0);
 }
 
-function readLocPin(cells: unknown[], locPinName: string, sizeName: string): number | undefined {
-  const locPin = readCellNumber(cells, locPinName);
+function readLocPin(cells: unknown[], locPinName: string, sizeName: string, refs?: Map<string, number>): number | undefined {
+  const locPin = readCellNumber(cells, locPinName, refs);
   if (locPin !== undefined) {
     return locPin;
   }
 
-  const size = readCellNumber(cells, sizeName);
+  const size = readCellNumber(cells, sizeName, refs);
   return size !== undefined ? size / 2 : undefined;
 }
 

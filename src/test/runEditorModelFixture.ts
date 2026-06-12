@@ -10,6 +10,7 @@ async function main(): Promise<void> {
   await verifiesCurvedGeometryRows();
   await verifiesAdvancedGeometryRows();
   await verifiesFormulaGeometryAndMasterRowInheritance();
+  await verifiesFormulaOnlyShapeTransformCells();
   await verifiesColorFormulaAndNoPaint();
   await verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle();
   await verifiesMasterChildShapeExpansion();
@@ -228,6 +229,76 @@ async function verifiesFormulaGeometryAndMasterRowInheritance(): Promise<void> {
   const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'formula-inheritance-fixture.vsdx');
   const geometryPath = diagram.pages[0]?.shapes[0]?.geometryPath ?? '';
   assert.strictEqual(geometryPath, 'M 2 4 L 6 2 L 8 0');
+}
+
+async function verifiesFormulaOnlyShapeTransformCells(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="FormulaOnlyBox">
+      <Cell N="PinX" F="GUARD(ThePage!PageWidth*0.5)"/>
+      <Cell N="PinY" F="=2IN"/>
+      <Cell N="Width" F="GUARD(2)"/>
+      <Cell N="Height" F="Width*0.5"/>
+      <Cell N="LineWeight" F="0.04"/>
+      <Text>Formula only box</Text>
+      <Section N="Geometry" IX="0">
+        <Row T="MoveTo" IX="1"><Cell N="X" F="0"/><Cell N="Y" F="0"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" F="Width"/><Cell N="Y" F="Height"/></Row>
+      </Section>
+    </Shape>
+    <Shape ID="2" NameU="Dynamic connector">
+      <Cell N="BeginX" F="GUARD(1)"/>
+      <Cell N="BeginY" F="GUARD(1)"/>
+      <Cell N="EndX" F="GUARD(4)"/>
+      <Cell N="EndY" F="GUARD(3)"/>
+      <Cell N="PinX" F="(BeginX+EndX)/2"/>
+      <Cell N="PinY" F="(BeginY+EndY)/2"/>
+      <Cell N="Width" F="EndX-BeginX"/>
+      <Cell N="Height" F="EndY-BeginY"/>
+      <Cell N="EndArrow" F="GUARD(5)"/>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const sourceBytes = await zip.generateAsync({ type: 'nodebuffer' });
+  const diagram = await readVsdxDiagram(sourceBytes, 'formula-only-transform-fixture.vsdx');
+  const shape = diagram.pages[0]?.shapes.find(candidate => candidate.id === '1');
+  const connector = diagram.pages[0]?.shapes.find(candidate => candidate.id === '2');
+  assert.ok(shape?.editable, 'expected formula-only shape transform cells to be editable');
+  assert.ok(Math.abs((shape.x ?? 0) - 3.25) < 0.0001, 'expected formula-only shape x to use page width formula');
+  assert.ok(Math.abs((shape.y ?? 0) - 1.5) < 0.0001, 'expected formula-only shape y to use unit formula');
+  assert.ok(Math.abs((shape.width ?? 0) - 2) < 0.0001, 'expected formula-only shape width');
+  assert.ok(Math.abs((shape.height ?? 0) - 1) < 0.0001, 'expected formula-only shape height to use local Width ref');
+  assert.ok(Math.abs((shape.strokeWidth ?? 0) - 0.04) < 0.0001, 'expected formula-only line weight');
+  assert.strictEqual(shape.geometryPath, 'M 0 1 L 2 0');
+  assert.ok(connector?.editable, 'expected formula-only connector endpoints to be editable');
+  assert.ok(Math.abs((connector.beginX ?? 0) - 1) < 0.0001, 'expected formula-only connector begin x');
+  assert.ok(Math.abs((connector.endY ?? 0) - 3) < 0.0001, 'expected formula-only connector end y');
+  assert.strictEqual(connector.endArrow, 5, 'expected formula-only connector arrow');
+
+  const updatedDiagram = replaceShapeInDiagram(diagram, {
+    pageEntry: diagram.pages[0].entry,
+    shape: {
+      ...shape,
+      x: 4,
+      y: 2,
+      width: 3,
+      height: 1.5,
+      text: 'Updated formula only box'
+    }
+  });
+  const updatedBytes = await writeVsdxDiagram(sourceBytes, updatedDiagram);
+  const updatedZip = await JSZip.loadAsync(updatedBytes);
+  const pageXml = await updatedZip.file('visio/pages/page1.xml')?.async('text');
+  assert.ok(pageXml, 'expected updated formula-only page XML');
+  assert.ok(!pageXml.includes('ThePage!PageWidth'), 'expected stale transform formulas to be removed after edit');
+  assert.ok(pageXml.includes('<Cell N="PinX" V="5.5"/>'), 'expected edited formula-only PinX to be numeric');
+  assert.ok(pageXml.includes('<Cell N="PinY" V="2.75"/>'), 'expected edited formula-only PinY to be numeric');
+  assert.ok(pageXml.includes('<Cell N="Width" V="3"/>'), 'expected edited formula-only Width to be numeric');
+  assert.ok(pageXml.includes('<Cell N="Height" V="1.5"/>'), 'expected edited formula-only Height to be numeric');
 }
 
 async function verifiesColorFormulaAndNoPaint(): Promise<void> {
