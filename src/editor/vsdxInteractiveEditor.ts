@@ -451,8 +451,6 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       fill: #111827;
       pointer-events: none;
       white-space: pre;
-      dominant-baseline: middle;
-      text-anchor: middle;
       font-family: "Segoe UI", sans-serif;
     }
     .text-background {
@@ -1003,8 +1001,6 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         }
         const text = document.createElementNS(svgNS, 'text');
         text.classList.add('shape-label');
-        text.setAttribute('x', String(textBox.x + textBox.width / 2));
-        text.setAttribute('y', String(textBox.y + textBox.height / 2));
         if (Math.abs(textBox.angle) > 0.0001) {
           const degrees = -textBox.angle * 180 / Math.PI;
           text.setAttribute('transform', 'rotate(' + degrees + ' ' + (textBox.x + textBox.width / 2) + ' ' + (textBox.y + textBox.height / 2) + ')');
@@ -1015,11 +1011,15 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         text.setAttribute('font-size', String(fontSize));
         const lines = String(shape.text).replace(/\\r/g, '').split('\\n').filter(line => line.length > 0);
         const lineHeight = Math.min(Math.max(fontSize * 1.2, 0.08), Math.max(0.08, textBox.height / Math.max(2, lines.length + 1)));
-        const startOffset = -((lines.length - 1) * lineHeight) / 2;
+        const textPosition = resolveTextPosition(shape, textBox, lines.length, lineHeight);
+        text.setAttribute('x', String(textPosition.x));
+        text.setAttribute('y', String(textPosition.y));
+        text.setAttribute('text-anchor', textPosition.anchor);
+        text.setAttribute('dominant-baseline', textPosition.baseline);
         lines.slice(0, 5).forEach((line, index) => {
           const tspan = document.createElementNS(svgNS, 'tspan');
-          tspan.setAttribute('x', String(textBox.x + textBox.width / 2));
-          tspan.setAttribute('dy', index === 0 ? String(startOffset) : String(lineHeight));
+          tspan.setAttribute('x', String(textPosition.x));
+          tspan.setAttribute('dy', index === 0 ? '0' : String(lineHeight));
           tspan.textContent = line;
           text.append(tspan);
         });
@@ -1210,6 +1210,32 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
     function textFontSize(shape, textBox) {
       const fallback = Math.min(0.16, Math.max(0.08, textBox.height / 3.2));
       return clamp(numberOr(shape.textStyle && shape.textStyle.fontSize, fallback), 0.04, Math.max(0.04, textBox.height * 0.75));
+    }
+
+    function resolveTextPosition(shape, textBox, lineCount, lineHeight) {
+      const style = shape.textStyle || {};
+      const horizontal = style.horizontalAlign || 'center';
+      const vertical = style.verticalAlign || 'middle';
+      const padding = Math.min(0.08, Math.max(0.02, textBox.width * 0.04));
+      const visibleLines = Math.max(1, Math.min(5, lineCount));
+      const lineSpan = (visibleLines - 1) * lineHeight;
+      let x = textBox.x + textBox.width / 2;
+      let anchor = 'middle';
+      if (horizontal === 'left') {
+        x = textBox.x + padding;
+        anchor = 'start';
+      } else if (horizontal === 'right') {
+        x = textBox.x + textBox.width - padding;
+        anchor = 'end';
+      }
+      let y = textBox.y + textBox.height / 2 - lineSpan / 2;
+      let baseline = 'middle';
+      if (vertical === 'top') {
+        y = textBox.y + lineHeight / 2;
+      } else if (vertical === 'bottom') {
+        y = textBox.y + textBox.height - lineSpan - lineHeight / 2;
+      }
+      return { x, y, anchor, baseline };
     }
 
     function applyTextStyle(text, shape) {

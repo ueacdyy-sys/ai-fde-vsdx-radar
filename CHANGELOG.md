@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.31 - 2026-06-12
+
+### Added
+
+- Added semantic support for Visio paragraph and text-block alignment cells, including `HAlign`, `HorzAlign`, and `VerticalAlign`, so left, center, right, top, middle, and bottom text placement renders in the interactive editor.
+- Added alignment inheritance through Paragraph sections, TextStyle styles, page-shape cells, formula cells, and legacy Visio XML `Para` / `TextBlock` paths.
+- Added regression coverage for direct modern Visio package alignment, inherited StyleSheet alignment, and legacy Visio XML alignment metadata.
+
 ## 0.1.30 - 2026-06-12
 
 ### Added

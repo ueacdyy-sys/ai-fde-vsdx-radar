@@ -96,6 +96,8 @@ export interface VsdxEditorTextStyle {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  horizontalAlign?: 'left' | 'center' | 'right';
+  verticalAlign?: 'top' | 'middle' | 'bottom';
   background?: string;
   backgroundOpacity?: number;
 }
@@ -217,6 +219,9 @@ const legacyXmlCellNames = new Set([
   'Char.Color',
   'Size',
   'Style',
+  'HAlign',
+  'HorzAlign',
+  'VerticalAlign',
   'TextBkgnd',
   'TextBkgndTrans',
   'TxtPinX',
@@ -290,6 +295,9 @@ const textStyleCellNames = new Set([
   'Font',
   'Size',
   'Style',
+  'HAlign',
+  'HorzAlign',
+  'VerticalAlign',
   'TextPosAfterBullet',
   'TextBkgnd',
   'TextBkgndTrans',
@@ -556,6 +564,8 @@ function collectLegacyXmlCells(source: any, names: Set<string>): any[] {
     source.Fill,
     source.Char,
     source.Character,
+    source.Para,
+    source.Paragraph,
     source.TextBlock,
     source.TextXForm,
     source.PageProps,
@@ -1600,6 +1610,7 @@ function readTextBox(cells: unknown[], refs: Map<string, number>): VsdxEditorTex
 
 function readTextStyle(cells: unknown[], sections: any[], refs: Map<string, number>): VsdxEditorTextStyle | undefined {
   const characterCells = readPrimaryCharacterCells(sections);
+  const paragraphCells = readPrimaryParagraphCells(sections);
   const color = readColorCell(characterCells, 'Color')
     ?? readColorCell(cells, 'Char.Color')
     ?? readColorCell(cells, 'Color');
@@ -1607,6 +1618,9 @@ function readTextStyle(cells: unknown[], sections: any[], refs: Map<string, numb
     ?? readFontSizeCell(cells, refs);
   const fontStyle = readCharacterStyleCell(characterCells, refs)
     ?? readCharacterStyleCell(cells, refs);
+  const horizontalAlign = readHorizontalAlign(paragraphCells, refs)
+    ?? readHorizontalAlign(cells, refs);
+  const verticalAlign = readVerticalAlign(cells, refs);
   const background = readColorCell(cells, 'TextBkgnd');
   const backgroundOpacity = readOpacityCell(cells, 'TextBkgndTrans', refs);
   const style: VsdxEditorTextStyle = {};
@@ -1620,6 +1634,12 @@ function readTextStyle(cells: unknown[], sections: any[], refs: Map<string, numb
     style.bold = (fontStyle & 1) !== 0;
     style.italic = (fontStyle & 2) !== 0;
     style.underline = (fontStyle & 4) !== 0;
+  }
+  if (horizontalAlign) {
+    style.horizontalAlign = horizontalAlign;
+  }
+  if (verticalAlign) {
+    style.verticalAlign = verticalAlign;
   }
   if (background) {
     style.background = background;
@@ -1638,8 +1658,55 @@ function readCharacterStyleCell(cells: unknown[], refs?: Map<string, number>): n
   return Math.max(0, Math.trunc(value));
 }
 
+function readHorizontalAlign(cells: unknown[], refs?: Map<string, number>): VsdxEditorTextStyle['horizontalAlign'] | undefined {
+  const value = readCellNumber(cells, 'HAlign', refs) ?? readCellNumber(cells, 'HorzAlign', refs);
+  if (value === undefined) {
+    return undefined;
+  }
+  const align = Math.trunc(value);
+  if (align === 2) {
+    return 'right';
+  }
+  if (align === 1 || align === 4) {
+    return 'center';
+  }
+  return 'left';
+}
+
+function readVerticalAlign(cells: unknown[], refs?: Map<string, number>): VsdxEditorTextStyle['verticalAlign'] | undefined {
+  const value = readCellNumber(cells, 'VerticalAlign', refs);
+  if (value === undefined) {
+    return undefined;
+  }
+  const align = Math.trunc(value);
+  if (align === 0) {
+    return 'top';
+  }
+  if (align === 2) {
+    return 'bottom';
+  }
+  return 'middle';
+}
+
 function readPrimaryCharacterCells(sections: any[]): any[] {
   for (const section of sections.filter(section => String(section?.N ?? '').toLowerCase() === 'character')) {
+    const sectionCells = toArray(section?.Cell);
+    if (sectionCells.length > 0) {
+      return sectionCells;
+    }
+    const row = toArray(section?.Row)
+      .filter(candidate => String(candidate?.Del ?? '') !== '1')
+      .sort((a, b) => cleanNumber(a?.IX, 0) - cleanNumber(b?.IX, 0))[0];
+    const rowCells = toArray(row?.Cell);
+    if (rowCells.length > 0) {
+      return rowCells;
+    }
+  }
+  return [];
+}
+
+function readPrimaryParagraphCells(sections: any[]): any[] {
+  for (const section of sections.filter(section => String(section?.N ?? '').toLowerCase() === 'paragraph')) {
     const sectionCells = toArray(section?.Cell);
     if (sectionCells.length > 0) {
       return sectionCells;
@@ -2003,7 +2070,8 @@ function styleSectionsForCategory(
 }
 
 function isTextStyleSection(section: any): boolean {
-  return String(section?.N ?? '').toLowerCase() === 'character';
+  const name = String(section?.N ?? '').toLowerCase();
+  return name === 'character' || name === 'paragraph';
 }
 
 function mergeEffectiveCellLayers(...layers: any[][]): any[] {
