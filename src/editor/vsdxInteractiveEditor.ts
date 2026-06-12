@@ -692,6 +692,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       if (event.data.command === 'load') {
         diagram = event.data.diagram;
         currentStatus = event.data.status || null;
+        dirty = false;
         const saved = vscode.getState() || {};
         pageIndex = Math.min(saved.pageIndex || 0, Math.max(0, (diagram.pages || []).length - 1));
         zoom = saved.zoom || 1;
@@ -704,6 +705,12 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         applyPanelLayout();
         applyLanguage();
         render();
+      }
+      if (event.data.command === 'saved') {
+        currentStatus = event.data.status || currentStatus;
+        dirty = false;
+        renderStatusPill();
+        renderInspector();
       }
     });
 
@@ -1554,6 +1561,12 @@ export class VsdxInteractiveDocument implements vscode.CustomDocument {
     }
   }
 
+  broadcastSaved(): void {
+    for (const panel of this.panels) {
+      void this.postSavedState(panel);
+    }
+  }
+
   applyShapeUpdate(update: VsdxEditorShapeUpdate): void {
     this.diagram = replaceShapeInDiagram(this.diagram, update);
   }
@@ -1563,8 +1576,7 @@ export class VsdxInteractiveDocument implements vscode.CustomDocument {
     await vscode.workspace.fs.writeFile(destination, bytes);
     if (destination.toString() === this.uri.toString()) {
       this.bytes = Buffer.from(bytes);
-      this.diagram = await readVsdxDiagram(this.bytes, this.uri.fsPath);
-      this.broadcastState();
+      this.broadcastSaved();
     }
   }
 
@@ -1588,6 +1600,13 @@ export class VsdxInteractiveDocument implements vscode.CustomDocument {
     } catch {
       return undefined;
     }
+  }
+
+  private async postSavedState(panel: vscode.WebviewPanel): Promise<void> {
+    await panel.webview.postMessage({
+      command: 'saved',
+      status: await this.readStatus()
+    });
   }
 }
 

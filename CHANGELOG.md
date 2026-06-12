@@ -2,6 +2,16 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.18 - 2026-06-12
+
+### Changed
+
+- Improved interactive editor save performance by avoiding a full Visio ZIP/XML re-parse after saving back to the same file; the editor now updates its byte cache and sends a lightweight saved-state message to open webviews.
+
+### Fixed
+
+- The interactive editor now clears its unsaved indicator after a successful save without forcing a full canvas reload.
+
 ## 0.1.17 - 2026-06-12
 
 ### Fixed
