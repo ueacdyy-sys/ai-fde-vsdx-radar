@@ -94,6 +94,7 @@ export interface VsdxEditorTextBox {
 
 export interface VsdxEditorTextStyle {
   color?: string;
+  fontFamily?: string;
   fontSize?: number;
   bold?: boolean;
   italic?: boolean;
@@ -178,6 +179,7 @@ type StyleCategory = 'line' | 'fill' | 'text';
 
 interface StyleSheetContext {
   byId: Map<string, StyleSheetEntry>;
+  fontFaces: Map<string, string>;
   resolvedCellCache: Map<string, any[]>;
   resolvedSectionCache: Map<string, any[]>;
 }
@@ -228,6 +230,7 @@ const legacyXmlCellNames = new Set([
   'ShapeShdwScaleFactor',
   'Color',
   'Char.Color',
+  'Font',
   'Size',
   'Style',
   'HAlign',
@@ -924,7 +927,7 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const fillPattern = readCellNumber(effectiveCells, 'FillPattern', shapeFormulaRefs);
   const angle = readCellNumber(effectiveCells, 'Angle', shapeFormulaRefs) ?? 0;
   const textBox = readTextBox(effectiveCells, shapeFormulaRefs);
-  const textStyle = readTextStyle(effectiveCells, effectiveSections, shapeFormulaRefs);
+  const textStyle = readTextStyle(effectiveCells, effectiveSections, shapeFormulaRefs, context.styleSheets.fontFaces);
   const shadow = readShadowStyle(effectiveCells, shapeFormulaRefs);
   const hasChildShapes = toArray(shape?.Shapes?.Shape).length > 0;
   const isConnector = isConnectorShape(shape) || isConnectorShape(masterShape);
@@ -1485,11 +1488,36 @@ function readStyleSheetsFromDocument(document: any): StyleSheetContext {
     });
   }
 
-  return { byId, resolvedCellCache: new Map(), resolvedSectionCache: new Map() };
+  return {
+    byId,
+    fontFaces: readFontFacesFromDocument(document),
+    resolvedCellCache: new Map(),
+    resolvedSectionCache: new Map()
+  };
 }
 
 function emptyStyleSheets(): StyleSheetContext {
-  return { byId: new Map(), resolvedCellCache: new Map(), resolvedSectionCache: new Map() };
+  return { byId: new Map(), fontFaces: new Map(), resolvedCellCache: new Map(), resolvedSectionCache: new Map() };
+}
+
+function readFontFacesFromDocument(document: any): Map<string, string> {
+  const faces = new Map<string, string>();
+  for (const face of toArray(document?.FaceNames?.FaceName)) {
+    const id = normalizedId(face?.ID);
+    const name = cleanFontFaceName(face?.Name ?? face?.NameU);
+    if (id && name) {
+      faces.set(id, name);
+    }
+  }
+  return faces;
+}
+
+function cleanFontFaceName(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const name = value.trim();
+  return name.length > 0 ? name : undefined;
 }
 
 async function readRelationshipImageDataUris(zip: JSZip, sourceEntry: string): Promise<Map<string, string>> {
@@ -1629,12 +1657,19 @@ function readTextBox(cells: unknown[], refs: Map<string, number>): VsdxEditorTex
   return isDefault ? undefined : textBox;
 }
 
-function readTextStyle(cells: unknown[], sections: any[], refs: Map<string, number>): VsdxEditorTextStyle | undefined {
+function readTextStyle(
+  cells: unknown[],
+  sections: any[],
+  refs: Map<string, number>,
+  fontFaces: Map<string, string>
+): VsdxEditorTextStyle | undefined {
   const characterCells = readPrimaryCharacterCells(sections);
   const paragraphCells = readPrimaryParagraphCells(sections);
   const color = readColorCell(characterCells, 'Color')
     ?? readColorCell(cells, 'Char.Color')
     ?? readColorCell(cells, 'Color');
+  const fontFamily = readFontFamilyCell(characterCells, refs, fontFaces)
+    ?? readFontFamilyCell(cells, refs, fontFaces);
   const fontSize = readFontSizeCell(characterCells, refs)
     ?? readFontSizeCell(cells, refs);
   const fontStyle = readCharacterStyleCell(characterCells, refs)
@@ -1648,6 +1683,9 @@ function readTextStyle(cells: unknown[], sections: any[], refs: Map<string, numb
   const style: VsdxEditorTextStyle = {};
   if (color) {
     style.color = color;
+  }
+  if (fontFamily) {
+    style.fontFamily = fontFamily;
   }
   if (fontSize !== undefined) {
     style.fontSize = fontSize;
@@ -1673,6 +1711,14 @@ function readTextStyle(cells: unknown[], sections: any[], refs: Map<string, numb
     style.backgroundOpacity = backgroundOpacity;
   }
   return Object.keys(style).length > 0 ? style : undefined;
+}
+
+function readFontFamilyCell(cells: unknown[], refs: Map<string, number>, fontFaces: Map<string, string>): string | undefined {
+  const id = readCellNumber(cells, 'Font', refs);
+  if (id === undefined) {
+    return undefined;
+  }
+  return fontFaces.get(String(Math.trunc(id)));
 }
 
 function readCharacterStyleCell(cells: unknown[], refs?: Map<string, number>): number | undefined {

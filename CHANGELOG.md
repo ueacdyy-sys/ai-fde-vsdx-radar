@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.35 - 2026-06-12
+
+### Added
+
+- Added semantic support for Visio `Font` cells by resolving the document `FaceNames` table into SVG `font-family` rendering.
+- Preserves font inheritance through direct shape cells, Character sections, TextStyle StyleSheets, master shapes, and legacy Visio XML files.
+- Added regression coverage for modern package fonts, inherited TextStyle fonts, master-style font inheritance, and legacy Visio XML font metadata.
+
 ## 0.1.34 - 2026-06-12
 
 ### Added

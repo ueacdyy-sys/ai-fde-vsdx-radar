@@ -576,6 +576,13 @@ async function verifiesShadowStyleCells(): Promise<void> {
 async function verifiesTextStyleCells(): Promise<void> {
   const zip = new JSZip();
   addSinglePageMetadata(zip);
+  zip.file('visio/document.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<VisioDocument>
+  <FaceNames>
+    <FaceName ID="3" NameU="Calibri"/>
+    <FaceName ID="7" Name="Times New Roman"/>
+  </FaceNames>
+</VisioDocument>`);
   zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
 <PageContents>
   <Shapes>
@@ -585,6 +592,7 @@ async function verifiesTextStyleCells(): Promise<void> {
       <Cell N="Width" V="2"/>
       <Cell N="Height" V="1"/>
       <Cell N="Color" V="2"/>
+      <Cell N="Font" V="3"/>
       <Cell N="Size" V="18" U="PT"/>
       <Cell N="Style" V="5"/>
       <Cell N="VerticalAlign" V="0"/>
@@ -602,7 +610,7 @@ async function verifiesTextStyleCells(): Promise<void> {
       <Cell N="Width" V="2"/>
       <Cell N="Height" V="1"/>
       <Section N="Character" IX="0">
-        <Row IX="0"><Cell N="Color" F="RGB(17,34,51)"/><Cell N="Size" V="0.25" U="IN"/><Cell N="Style" F="GUARD(2)"/></Row>
+        <Row IX="0"><Cell N="Color" F="RGB(17,34,51)"/><Cell N="Font" V="7"/><Cell N="Size" V="0.25" U="IN"/><Cell N="Style" F="GUARD(2)"/></Row>
       </Section>
       <Section N="Paragraph" IX="0">
         <Row IX="0"><Cell N="HAlign" V="2"/></Row>
@@ -616,6 +624,7 @@ async function verifiesTextStyleCells(): Promise<void> {
   const direct = diagram.pages[0]?.shapes[0];
   const character = diagram.pages[0]?.shapes[1];
   assert.strictEqual(direct?.textStyle?.color, '#ff0000', 'expected direct text color to use Visio indexed color');
+  assert.strictEqual(direct?.textStyle?.fontFamily, 'Calibri', 'expected direct font family from FaceNames table');
   assert.ok(Math.abs((direct?.textStyle?.fontSize ?? 0) - 0.25) < 0.0001, 'expected point text size to be converted to inches');
   assert.strictEqual(direct?.textStyle?.bold, true, 'expected direct text bold style');
   assert.strictEqual(direct?.textStyle?.italic, false, 'expected direct text italic style');
@@ -628,6 +637,7 @@ async function verifiesTextStyleCells(): Promise<void> {
   assert.strictEqual(direct?.textStyle?.background, '#ffeeaa', 'expected direct text background to be parsed');
   assert.ok(Math.abs((direct?.textStyle?.backgroundOpacity ?? 0) - 0.75) < 0.0001, 'expected text background transparency to become opacity');
   assert.strictEqual(character?.textStyle?.color, '#112233', 'expected character row text color to be parsed');
+  assert.strictEqual(character?.textStyle?.fontFamily, 'Times New Roman', 'expected character row font family from FaceNames table');
   assert.ok(Math.abs((character?.textStyle?.fontSize ?? 0) - 0.25) < 0.0001, 'expected character row text size to be parsed');
   assert.strictEqual(character?.textStyle?.bold, false, 'expected character row bold style');
   assert.strictEqual(character?.textStyle?.italic, true, 'expected character row italic style');
@@ -640,6 +650,9 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
   addSinglePageMetadata(zip);
   zip.file('visio/document.xml', `<?xml version="1.0" encoding="UTF-8"?>
 <VisioDocument>
+  <FaceNames>
+    <FaceName ID="11" NameU="Aptos"/>
+  </FaceNames>
   <StyleSheets>
     <StyleSheet ID="0" NameU="No Style">
       <Cell N="FillForegnd" V="#ffffff"/>
@@ -657,7 +670,7 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
       <Cell N="VerticalAlign" V="2"/>
       <Cell N="LeftMargin" V="0.09"/>
       <Cell N="RightMargin" V="0.08"/>
-      <Section N="Character" IX="0"><Row IX="0"><Cell N="Style" V="3"/></Row></Section>
+      <Section N="Character" IX="0"><Row IX="0"><Cell N="Font" V="11"/><Cell N="Style" V="3"/></Row></Section>
       <Section N="Paragraph" IX="0"><Row IX="0"><Cell N="HAlign" V="0"/></Row></Section>
     </StyleSheet>
     <StyleSheet ID="7" NameU="Flow Normal" LineStyle="3" FillStyle="3" TextStyle="3">
@@ -750,6 +763,7 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
   assert.ok(Math.abs((direct?.fillBackgroundOpacity ?? 0) - 0.6) < 0.0001, 'expected page shape fill background opacity to inherit from FillStyle');
   assert.strictEqual(direct?.line, '#654321', 'expected page shape line to inherit from LineStyle');
   assert.strictEqual(direct?.textStyle?.bold, true, 'expected page shape bold text style to inherit from TextStyle');
+  assert.strictEqual(direct?.textStyle?.fontFamily, 'Aptos', 'expected page shape font family to inherit from TextStyle');
   assert.strictEqual(direct?.textStyle?.italic, true, 'expected page shape italic text style to inherit from TextStyle');
   assert.strictEqual(direct?.textStyle?.underline, false, 'expected page shape underline text style to inherit from TextStyle');
   assert.strictEqual(direct?.textStyle?.horizontalAlign, 'left', 'expected page shape horizontal text alignment to inherit from TextStyle');
@@ -771,6 +785,7 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
   assert.ok(Math.abs((inheritedFromMaster?.rounding ?? 0) - 0.17) < 0.0001, 'expected master style rounding to reach page instance');
   assert.strictEqual(inheritedFromMaster?.shadow?.color, '#222222', 'expected master style shadow to reach page instance');
   assert.ok(Math.abs((inheritedFromMaster?.shadow?.blur ?? 0) - 0.11) < 0.0001, 'expected master style shadow blur to reach page instance');
+  assert.strictEqual(inheritedFromMaster?.textStyle?.fontFamily, 'Aptos', 'expected master style font family to reach page instance');
   assert.strictEqual(inheritedFromMaster?.width, 2, 'expected master width to remain available through effective cells');
   assert.strictEqual(inheritedFromMaster?.height, 1, 'expected master height to remain available through effective cells');
   assert.strictEqual(connector?.kind, 'connector');
@@ -1067,6 +1082,9 @@ async function verifiesLegacyOpaqueVisioGetsReadOnlyDiagram(): Promise<void> {
 async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   const source = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
 <VisioDocument>
+  <FaceNames>
+    <FaceName ID="4" Name="Cambria"/>
+  </FaceNames>
   <Pages>
     <Page ID="1" Name="Legacy XML Page">
       <PageSheet>
@@ -1122,6 +1140,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
           </Para>
           <Char IX="0">
             <Color>RGB(68,85,102)</Color>
+            <Font>4</Font>
             <Size U="PT">14</Size>
             <Style>7</Style>
           </Char>
@@ -1172,6 +1191,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.ok(Math.abs((shape.shadow?.blur ?? 0) - 0.09) < 0.0001, 'expected legacy XML direct shadow blur metadata');
   assert.ok(shape.textBox, 'expected legacy XML text box metadata');
   assert.strictEqual(shape.textStyle?.color, '#445566', 'expected legacy XML text color metadata');
+  assert.strictEqual(shape.textStyle?.fontFamily, 'Cambria', 'expected legacy XML direct font family metadata');
   assert.ok(Math.abs((shape.textStyle?.fontSize ?? 0) - (14 / 72)) < 0.0001, 'expected legacy XML text size metadata');
   assert.strictEqual(shape.textStyle?.bold, true, 'expected legacy XML text bold metadata');
   assert.strictEqual(shape.textStyle?.italic, true, 'expected legacy XML text italic metadata');
@@ -1230,6 +1250,9 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
 async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
   const source = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
 <VisioDocument>
+  <FaceNames>
+    <FaceName ID="8" NameU="Segoe UI"/>
+  </FaceNames>
   <StyleSheets>
     <StyleSheet ID="0" NameU="No Style">
       <Cell N="FillForegnd" V="#ffffff"/>
@@ -1260,7 +1283,7 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
       <Cell N="VerticalAlign" V="0"/>
       <Cell N="TopMargin" V="0.07"/>
       <Cell N="BottomMargin" V="0.08"/>
-      <Section N="Character" IX="0"><Row IX="0"><Cell N="Color" V="#123456"/><Cell N="Size" V="16" U="PT"/><Cell N="Style" V="4"/></Row></Section>
+      <Section N="Character" IX="0"><Row IX="0"><Cell N="Color" V="#123456"/><Cell N="Font" V="8"/><Cell N="Size" V="16" U="PT"/><Cell N="Style" V="4"/></Row></Section>
       <Section N="Paragraph" IX="0"><Row IX="0"><Cell N="HAlign" V="1"/></Row></Section>
     </StyleSheet>
   </StyleSheets>
@@ -1304,6 +1327,7 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
   assert.ok(Math.abs((shape?.shadow?.blur ?? 0) - 0.07) < 0.0001, 'expected legacy XML FillStyle shadow blur to be applied');
   assert.ok(Math.abs((shape?.strokeWidth ?? 0) - 0.04) < 0.0001, 'expected legacy XML line weight to be applied');
   assert.strictEqual(shape?.textStyle?.color, '#123456', 'expected legacy XML TextStyle color to be applied');
+  assert.strictEqual(shape?.textStyle?.fontFamily, 'Segoe UI', 'expected legacy XML TextStyle font family to be applied');
   assert.ok(Math.abs((shape?.textStyle?.fontSize ?? 0) - (16 / 72)) < 0.0001, 'expected legacy XML TextStyle size to be applied');
   assert.strictEqual(shape?.textStyle?.bold, false, 'expected legacy XML TextStyle bold to be applied');
   assert.strictEqual(shape?.textStyle?.italic, false, 'expected legacy XML TextStyle italic to be applied');

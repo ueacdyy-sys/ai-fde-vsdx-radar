@@ -1299,6 +1299,10 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
 
     function applyTextStyle(text, shape) {
       const style = shape.textStyle || {};
+      const fontFamily = safeFontFamily(style.fontFamily);
+      if (fontFamily) {
+        text.setAttribute('font-family', fontFamily);
+      }
       if (style.bold) {
         text.setAttribute('font-weight', '700');
       }
@@ -1308,6 +1312,18 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       if (style.underline) {
         text.setAttribute('text-decoration', 'underline');
       }
+    }
+
+    function safeFontFamily(value) {
+      if (typeof value !== 'string') {
+        return '';
+      }
+      return value
+        .split(',')
+        .map(part => part.trim().replace(/["']/g, ''))
+        .filter(part => /^[\w .\-\u0080-\uffff]+$/.test(part))
+        .map(part => part.includes(' ') ? '"' + part + '"' : part)
+        .join(', ');
     }
 
     function renderConnector(page, shape) {
