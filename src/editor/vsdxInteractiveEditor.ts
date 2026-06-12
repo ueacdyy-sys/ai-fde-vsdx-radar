@@ -1010,6 +1010,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
           text.setAttribute('transform', 'rotate(' + degrees + ' ' + (textBox.x + textBox.width / 2) + ' ' + (textBox.y + textBox.height / 2) + ')');
         }
         text.style.fill = safeColor(shape.textStyle && shape.textStyle.color, '#111827');
+        applyTextStyle(text, shape);
         const fontSize = textFontSize(shape, textBox);
         text.setAttribute('font-size', String(fontSize));
         const lines = String(shape.text).replace(/\\r/g, '').split('\\n').filter(line => line.length > 0);
@@ -1209,6 +1210,19 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
     function textFontSize(shape, textBox) {
       const fallback = Math.min(0.16, Math.max(0.08, textBox.height / 3.2));
       return clamp(numberOr(shape.textStyle && shape.textStyle.fontSize, fallback), 0.04, Math.max(0.04, textBox.height * 0.75));
+    }
+
+    function applyTextStyle(text, shape) {
+      const style = shape.textStyle || {};
+      if (style.bold) {
+        text.setAttribute('font-weight', '700');
+      }
+      if (style.italic) {
+        text.setAttribute('font-style', 'italic');
+      }
+      if (style.underline) {
+        text.setAttribute('text-decoration', 'underline');
+      }
     }
 
     function renderConnector(page, shape) {

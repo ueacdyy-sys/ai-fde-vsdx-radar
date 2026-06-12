@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.30 - 2026-06-12
+
+### Added
+
+- Added semantic support for Visio `Character.Style` bit flags so bold, italic, and underline text render in the interactive editor.
+- Added text style inheritance through Character sections, StyleSheet, page-shape, formula, and legacy Visio XML paths.
+- Added regression coverage for direct modern Visio package text styles, Character row formulas, inherited StyleSheet text style flags, and legacy Visio XML `Char` style metadata.
+
 ## 0.1.29 - 2026-06-12
 
 ### Added

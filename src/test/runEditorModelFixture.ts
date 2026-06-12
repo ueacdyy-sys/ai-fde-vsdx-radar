@@ -552,6 +552,7 @@ async function verifiesTextStyleCells(): Promise<void> {
       <Cell N="Height" V="1"/>
       <Cell N="Color" V="2"/>
       <Cell N="Size" V="18" U="PT"/>
+      <Cell N="Style" V="5"/>
       <Cell N="TextBkgnd" V="#ffeeaa"/>
       <Cell N="TextBkgndTrans" V="25"/>
       <Text>Direct text style</Text>
@@ -562,7 +563,7 @@ async function verifiesTextStyleCells(): Promise<void> {
       <Cell N="Width" V="2"/>
       <Cell N="Height" V="1"/>
       <Section N="Character" IX="0">
-        <Row IX="0"><Cell N="Color" F="RGB(17,34,51)"/><Cell N="Size" V="0.25" U="IN"/></Row>
+        <Row IX="0"><Cell N="Color" F="RGB(17,34,51)"/><Cell N="Size" V="0.25" U="IN"/><Cell N="Style" F="GUARD(2)"/></Row>
       </Section>
       <Text>Character text style</Text>
     </Shape>
@@ -574,10 +575,16 @@ async function verifiesTextStyleCells(): Promise<void> {
   const character = diagram.pages[0]?.shapes[1];
   assert.strictEqual(direct?.textStyle?.color, '#ff0000', 'expected direct text color to use Visio indexed color');
   assert.ok(Math.abs((direct?.textStyle?.fontSize ?? 0) - 0.25) < 0.0001, 'expected point text size to be converted to inches');
+  assert.strictEqual(direct?.textStyle?.bold, true, 'expected direct text bold style');
+  assert.strictEqual(direct?.textStyle?.italic, false, 'expected direct text italic style');
+  assert.strictEqual(direct?.textStyle?.underline, true, 'expected direct text underline style');
   assert.strictEqual(direct?.textStyle?.background, '#ffeeaa', 'expected direct text background to be parsed');
   assert.ok(Math.abs((direct?.textStyle?.backgroundOpacity ?? 0) - 0.75) < 0.0001, 'expected text background transparency to become opacity');
   assert.strictEqual(character?.textStyle?.color, '#112233', 'expected character row text color to be parsed');
   assert.ok(Math.abs((character?.textStyle?.fontSize ?? 0) - 0.25) < 0.0001, 'expected character row text size to be parsed');
+  assert.strictEqual(character?.textStyle?.bold, false, 'expected character row bold style');
+  assert.strictEqual(character?.textStyle?.italic, true, 'expected character row italic style');
+  assert.strictEqual(character?.textStyle?.underline, false, 'expected character row underline style');
 }
 
 async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Promise<void> {
@@ -599,6 +606,7 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
       <Cell N="FillForegnd" V="#ddeeff"/>
       <Cell N="LineColor" V="#112233"/>
       <Cell N="LineWeight" V="0.02"/>
+      <Section N="Character" IX="0"><Row IX="0"><Cell N="Style" V="3"/></Row></Section>
     </StyleSheet>
     <StyleSheet ID="7" NameU="Flow Normal" LineStyle="3" FillStyle="3" TextStyle="3">
       <Cell N="FillForegnd" V="#123456"/>
@@ -659,6 +667,7 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
       <Cell N="PinY" V="2"/>
       <Cell N="Width" V="2"/>
       <Cell N="Height" V="1"/>
+      <Text>Styled text</Text>
     </Shape>
     <Shape ID="2" NameU="MasterStyle" Master="2">
       <Cell N="PinX" V="5"/>
@@ -686,6 +695,9 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
   assert.strictEqual(direct?.fillBackground, '#f6d365', 'expected page shape fill background to inherit from FillStyle');
   assert.ok(Math.abs((direct?.fillBackgroundOpacity ?? 0) - 0.6) < 0.0001, 'expected page shape fill background opacity to inherit from FillStyle');
   assert.strictEqual(direct?.line, '#654321', 'expected page shape line to inherit from LineStyle');
+  assert.strictEqual(direct?.textStyle?.bold, true, 'expected page shape bold text style to inherit from TextStyle');
+  assert.strictEqual(direct?.textStyle?.italic, true, 'expected page shape italic text style to inherit from TextStyle');
+  assert.strictEqual(direct?.textStyle?.underline, false, 'expected page shape underline text style to inherit from TextStyle');
   assert.strictEqual(direct?.linePattern, 2, 'expected page shape line pattern to inherit from LineStyle');
   assert.strictEqual(direct?.lineCap, 1, 'expected page shape line cap to inherit from LineStyle');
   assert.strictEqual(direct?.shadow?.color, '#222222', 'expected page shape shadow color to inherit from FillStyle');
@@ -1037,6 +1049,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
           <Char IX="0">
             <Color>RGB(68,85,102)</Color>
             <Size U="PT">14</Size>
+            <Style>7</Style>
           </Char>
           <Text>Legacy text</Text>
           <Geom IX="0">
@@ -1084,6 +1097,9 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.ok(shape.textBox, 'expected legacy XML text box metadata');
   assert.strictEqual(shape.textStyle?.color, '#445566', 'expected legacy XML text color metadata');
   assert.ok(Math.abs((shape.textStyle?.fontSize ?? 0) - (14 / 72)) < 0.0001, 'expected legacy XML text size metadata');
+  assert.strictEqual(shape.textStyle?.bold, true, 'expected legacy XML text bold metadata');
+  assert.strictEqual(shape.textStyle?.italic, true, 'expected legacy XML text italic metadata');
+  assert.strictEqual(shape.textStyle?.underline, true, 'expected legacy XML text underline metadata');
   assert.strictEqual(shape.textStyle?.background, '#ddeeff', 'expected legacy XML text background metadata');
   assert.ok(Math.abs((shape.textStyle?.backgroundOpacity ?? 0) - 0.5) < 0.0001, 'expected legacy XML text background transparency metadata');
   assert.ok(Math.abs((shape.textBox?.x ?? 0) - 1) < 0.0001, 'expected legacy XML text box x');
@@ -1157,7 +1173,7 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
       <Cell N="ShapeShdwOffsetY" V="-0.12"/>
       <Cell N="TextBkgnd" V="#f0f0f0"/>
       <Cell N="TextBkgndTrans" V="20"/>
-      <Section N="Character" IX="0"><Row IX="0"><Cell N="Color" V="#123456"/><Cell N="Size" V="16" U="PT"/></Row></Section>
+      <Section N="Character" IX="0"><Row IX="0"><Cell N="Color" V="#123456"/><Cell N="Size" V="16" U="PT"/><Cell N="Style" V="4"/></Row></Section>
     </StyleSheet>
   </StyleSheets>
   <Pages>
@@ -1199,6 +1215,9 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
   assert.ok(Math.abs((shape?.strokeWidth ?? 0) - 0.04) < 0.0001, 'expected legacy XML line weight to be applied');
   assert.strictEqual(shape?.textStyle?.color, '#123456', 'expected legacy XML TextStyle color to be applied');
   assert.ok(Math.abs((shape?.textStyle?.fontSize ?? 0) - (16 / 72)) < 0.0001, 'expected legacy XML TextStyle size to be applied');
+  assert.strictEqual(shape?.textStyle?.bold, false, 'expected legacy XML TextStyle bold to be applied');
+  assert.strictEqual(shape?.textStyle?.italic, false, 'expected legacy XML TextStyle italic to be applied');
+  assert.strictEqual(shape?.textStyle?.underline, true, 'expected legacy XML TextStyle underline to be applied');
   assert.strictEqual(shape?.textStyle?.background, '#f0f0f0', 'expected legacy XML TextStyle background to be applied');
   assert.ok(Math.abs((shape?.textStyle?.backgroundOpacity ?? 0) - 0.8) < 0.0001, 'expected legacy XML TextStyle background opacity to be applied');
 }

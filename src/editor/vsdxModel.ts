@@ -93,6 +93,9 @@ export interface VsdxEditorTextBox {
 export interface VsdxEditorTextStyle {
   color?: string;
   fontSize?: number;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
   background?: string;
   backgroundOpacity?: number;
 }
@@ -213,6 +216,7 @@ const legacyXmlCellNames = new Set([
   'Color',
   'Char.Color',
   'Size',
+  'Style',
   'TextBkgnd',
   'TextBkgndTrans',
   'TxtPinX',
@@ -1601,6 +1605,8 @@ function readTextStyle(cells: unknown[], sections: any[], refs: Map<string, numb
     ?? readColorCell(cells, 'Color');
   const fontSize = readFontSizeCell(characterCells, refs)
     ?? readFontSizeCell(cells, refs);
+  const fontStyle = readCharacterStyleCell(characterCells, refs)
+    ?? readCharacterStyleCell(cells, refs);
   const background = readColorCell(cells, 'TextBkgnd');
   const backgroundOpacity = readOpacityCell(cells, 'TextBkgndTrans', refs);
   const style: VsdxEditorTextStyle = {};
@@ -1610,6 +1616,11 @@ function readTextStyle(cells: unknown[], sections: any[], refs: Map<string, numb
   if (fontSize !== undefined) {
     style.fontSize = fontSize;
   }
+  if (fontStyle !== undefined) {
+    style.bold = (fontStyle & 1) !== 0;
+    style.italic = (fontStyle & 2) !== 0;
+    style.underline = (fontStyle & 4) !== 0;
+  }
   if (background) {
     style.background = background;
   }
@@ -1617,6 +1628,14 @@ function readTextStyle(cells: unknown[], sections: any[], refs: Map<string, numb
     style.backgroundOpacity = backgroundOpacity;
   }
   return Object.keys(style).length > 0 ? style : undefined;
+}
+
+function readCharacterStyleCell(cells: unknown[], refs?: Map<string, number>): number | undefined {
+  const value = readCellNumber(cells, 'Style', refs);
+  if (value === undefined) {
+    return undefined;
+  }
+  return Math.max(0, Math.trunc(value));
 }
 
 function readPrimaryCharacterCells(sections: any[]): any[] {
