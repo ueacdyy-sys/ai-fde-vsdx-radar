@@ -11,11 +11,13 @@ async function main(): Promise<void> {
   await verifiesAdvancedGeometryRows();
   await verifiesFormulaGeometryAndMasterRowInheritance();
   await verifiesColorFormulaAndNoPaint();
+  await verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle();
   await verifiesMasterChildShapeExpansion();
   await verifiesStencilMasterFallbackPreview();
   await verifiesLegacyVisioBinaryGetsReadOnlyDiagram();
   await verifiesLegacyOpaqueVisioGetsReadOnlyDiagram();
   await verifiesLegacyXmlDrawingPreviewAndWriteBack();
+  await verifiesLegacyXmlStyleSheetInheritance();
   await verifiesLegacyXmlStencilFallbackPreview();
   await verifiesRotatedShapeStaysEditableAndPreservesAngle();
   await verifiesShapeResizeWriteBackCentersLocPin();
@@ -276,6 +278,110 @@ async function verifiesColorFormulaAndNoPaint(): Promise<void> {
   assert.strictEqual(styled?.line, '#c81020');
   assert.strictEqual(noPaint?.fill, 'none');
   assert.strictEqual(noPaint?.line, 'none');
+}
+
+async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/document.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<VisioDocument>
+  <StyleSheets>
+    <StyleSheet ID="0" NameU="No Style">
+      <Cell N="FillForegnd" V="#ffffff"/>
+      <Cell N="FillPattern" V="1"/>
+      <Cell N="LineColor" V="#000000"/>
+      <Cell N="LinePattern" V="1"/>
+      <Cell N="LineWeight" V="0.01"/>
+      <Cell N="BeginArrow" V="0"/>
+      <Cell N="EndArrow" V="0"/>
+    </StyleSheet>
+    <StyleSheet ID="3" NameU="Base" LineStyle="0" FillStyle="0" TextStyle="0">
+      <Cell N="FillForegnd" V="#ddeeff"/>
+      <Cell N="LineColor" V="#112233"/>
+      <Cell N="LineWeight" V="0.02"/>
+    </StyleSheet>
+    <StyleSheet ID="7" NameU="Flow Normal" LineStyle="3" FillStyle="3" TextStyle="3">
+      <Cell N="FillForegnd" V="#123456"/>
+      <Cell N="FillPattern" V="1"/>
+      <Cell N="LineColor" V="#654321"/>
+      <Cell N="LinePattern" V="2"/>
+      <Cell N="LineWeight" V="0.03"/>
+      <Cell N="BeginArrow" V="4"/>
+      <Cell N="EndArrow" V="13"/>
+    </StyleSheet>
+    <StyleSheet ID="8" NameU="Connector" LineStyle="7" FillStyle="7" TextStyle="7">
+      <Cell N="LineColor" V="#abcdef"/>
+      <Cell N="LinePattern" V="3"/>
+      <Cell N="EndArrow" V="5"/>
+      <Cell N="FillForegnd" V="Themed" F="Inh"/>
+    </StyleSheet>
+  </StyleSheets>
+</VisioDocument>`);
+  zip.file('visio/masters/masters.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<Masters xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <Master ID="2" NameU="StyledMaster"><Rel r:id="rId1"/></Master>
+</Masters>`);
+  zip.file('visio/masters/_rels/masters.xml.rels', `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.microsoft.com/visio/2010/relationships/master" Target="master1.xml"/>
+</Relationships>`);
+  zip.file('visio/masters/master1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<MasterContents>
+  <Shapes>
+    <Shape ID="4" LineStyle="7" FillStyle="7" TextStyle="7">
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Section N="Geometry" IX="0">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" V="2"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="3"><Cell N="X" V="2"/><Cell N="Y" V="1"/></Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</MasterContents>`);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="DirectStyle" LineStyle="7" FillStyle="7" TextStyle="7">
+      <Cell N="PinX" V="2"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+    </Shape>
+    <Shape ID="2" NameU="MasterStyle" Master="2">
+      <Cell N="PinX" V="5"/>
+      <Cell N="PinY" V="2"/>
+    </Shape>
+    <Shape ID="3" NameU="Dynamic connector" OneD="1" LineStyle="8" FillStyle="8" TextStyle="8">
+      <Cell N="BeginX" V="1"/>
+      <Cell N="BeginY" V="4"/>
+      <Cell N="EndX" V="5"/>
+      <Cell N="EndY" V="4"/>
+      <Cell N="PinX" V="3"/>
+      <Cell N="PinY" V="4"/>
+      <Cell N="Width" V="4"/>
+      <Cell N="Height" V="0"/>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'stylesheet-fixture.vsdx');
+  const direct = diagram.pages[0]?.shapes.find(shape => shape.id === '1');
+  const inheritedFromMaster = diagram.pages[0]?.shapes.find(shape => shape.id === '2');
+  const connector = diagram.pages[0]?.shapes.find(shape => shape.id === '3');
+  assert.strictEqual(direct?.fill, '#123456', 'expected page shape fill to inherit from FillStyle');
+  assert.strictEqual(direct?.line, '#654321', 'expected page shape line to inherit from LineStyle');
+  assert.strictEqual(direct?.linePattern, 2, 'expected page shape line pattern to inherit from LineStyle');
+  assert.ok(Math.abs((direct?.strokeWidth ?? 0) - 0.03) < 0.0001, 'expected page shape stroke width to inherit from LineStyle');
+  assert.strictEqual(inheritedFromMaster?.fill, '#123456', 'expected master style fill to reach page instance');
+  assert.strictEqual(inheritedFromMaster?.line, '#654321', 'expected master style line to reach page instance');
+  assert.strictEqual(inheritedFromMaster?.width, 2, 'expected master width to remain available through effective cells');
+  assert.strictEqual(inheritedFromMaster?.height, 1, 'expected master height to remain available through effective cells');
+  assert.strictEqual(connector?.kind, 'connector');
+  assert.strictEqual(connector?.line, '#abcdef', 'expected connector line color to inherit from connector LineStyle');
+  assert.strictEqual(connector?.linePattern, 3, 'expected connector line pattern to inherit from connector LineStyle');
+  assert.strictEqual(connector?.endArrow, 5, 'expected connector end arrow to inherit from connector LineStyle');
+  assert.strictEqual(connector?.fill, '#123456', 'expected inherited FillStyle fallback when connector style fill is Inh');
 }
 
 async function verifiesMasterChildShapeExpansion(): Promise<void> {
@@ -586,6 +692,52 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.ok(Math.abs((rereadShape?.height ?? 0) - 1.5) < 0.0001, 'expected legacy XML shape height to write back');
   assert.strictEqual(rereadConnector?.text, 'Moved connector');
   assert.ok(Math.abs((rereadConnector?.endX ?? 0) - 6) < 0.0001, 'expected legacy XML connector endpoint to write back');
+}
+
+async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
+  const source = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
+<VisioDocument>
+  <StyleSheets>
+    <StyleSheet ID="0" NameU="No Style">
+      <Cell N="FillForegnd" V="#ffffff"/>
+      <Cell N="FillPattern" V="1"/>
+      <Cell N="LineColor" V="#000000"/>
+      <Cell N="LinePattern" V="1"/>
+    </StyleSheet>
+    <StyleSheet ID="5" NameU="Legacy Style" LineStyle="0" FillStyle="0" TextStyle="0">
+      <Cell N="FillForegnd" V="#224466"/>
+      <Cell N="LineColor" V="#6688aa"/>
+      <Cell N="LinePattern" V="2"/>
+      <Cell N="LineWeight" V="0.04"/>
+    </StyleSheet>
+  </StyleSheets>
+  <Pages>
+    <Page ID="1" Name="Legacy XML Styled">
+      <PageSheet><PageProps><PageWidth>8</PageWidth><PageHeight>6</PageHeight></PageProps></PageSheet>
+      <Shapes>
+        <Shape ID="1" NameU="StyledLegacy" LineStyle="5" FillStyle="5" TextStyle="5">
+          <XForm>
+            <PinX>2</PinX>
+            <PinY>2</PinY>
+            <Width>2</Width>
+            <Height>1</Height>
+          </XForm>
+          <Geom IX="0">
+            <MoveTo IX="1"><X>0</X><Y>0</Y></MoveTo>
+            <LineTo IX="2"><X>2</X><Y>0</Y></LineTo>
+          </Geom>
+        </Shape>
+      </Shapes>
+    </Page>
+  </Pages>
+</VisioDocument>`, 'utf8');
+
+  const diagram = await readVsdxDiagram(source, 'legacy-stylesheet-fixture.vdx');
+  const shape = diagram.pages[0]?.shapes[0];
+  assert.strictEqual(shape?.fill, '#224466', 'expected legacy XML FillStyle to be applied');
+  assert.strictEqual(shape?.line, '#6688aa', 'expected legacy XML LineStyle to be applied');
+  assert.strictEqual(shape?.linePattern, 2, 'expected legacy XML line pattern to be applied');
+  assert.ok(Math.abs((shape?.strokeWidth ?? 0) - 0.04) < 0.0001, 'expected legacy XML line weight to be applied');
 }
 
 async function verifiesLegacyXmlStencilFallbackPreview(): Promise<void> {

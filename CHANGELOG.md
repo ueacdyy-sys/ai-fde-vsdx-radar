@@ -2,6 +2,18 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.15 - 2026-06-12
+
+### Added
+
+- Added StyleSheet inheritance for modern Visio packages so hand-authored `.vsdx`, `.vsdm`, `.vssx`, `.vssm`, `.vstx`, and `.vstm` files can inherit fill, line, stroke width, connector dash, and connector arrow semantics from `visio/document.xml`.
+- Added regression coverage for page-level and master-level StyleSheet inheritance, including connector line patterns and arrows.
+
+### Changed
+
+- The interactive editor now resolves an effective ShapeSheet cell layer from StyleSheet, master shape, and page shape data before rendering, while keeping normal open on the fast local XML/ZIP path instead of invoking Visio COM.
+- Visio indexed color values such as `0` and `1` are normalized for semantic rendering, with RGB formulas taking precedence when Visio stores a computed cache value beside a formula.
+
 ## 0.1.14 - 2026-06-12
 
 ### Added

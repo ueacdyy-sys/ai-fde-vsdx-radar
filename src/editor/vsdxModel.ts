@@ -112,6 +112,7 @@ interface PointTransform {
 interface EditorShapeContext {
   modelId: string;
   masterShapes: Map<string, MasterShapeEntry>;
+  styleSheets: StyleSheetContext;
   imageDataUriByRelId: Map<string, string>;
   readOnlyReason?: string;
 }
@@ -119,6 +120,22 @@ interface EditorShapeContext {
 interface MasterShapeEntry {
   shape: any;
   imageDataUriByRelId: Map<string, string>;
+}
+
+type StyleCategory = 'line' | 'fill' | 'text';
+
+interface StyleSheetContext {
+  byId: Map<string, StyleSheetEntry>;
+  resolvedCellCache: Map<string, any[]>;
+}
+
+interface StyleSheetEntry {
+  id: string;
+  lineStyleId?: string;
+  fillStyleId?: string;
+  textStyleId?: string;
+  cells: any[];
+  sections: any[];
 }
 
 const legacyXmlCellNames = new Set([
@@ -167,6 +184,52 @@ const legacyXmlGeometryRowNames = new Set([
   'RelPolylineTo'
 ]);
 
+const lineStyleCellNames = new Set([
+  'LineWeight',
+  'LineColor',
+  'LinePattern',
+  'LineCap',
+  'LineColorTrans',
+  'BeginArrow',
+  'EndArrow',
+  'BeginArrowSize',
+  'EndArrowSize',
+  'Rounding'
+]);
+
+const fillStyleCellNames = new Set([
+  'FillForegnd',
+  'FillBkgnd',
+  'FillPattern',
+  'FillForegndTrans',
+  'FillBkgndTrans',
+  'ShdwForegnd',
+  'ShdwBkgnd',
+  'ShdwPattern',
+  'ShapeShdwType',
+  'ShapeShdwOffsetX',
+  'ShapeShdwOffsetY',
+  'ShapeShdwScaleFactor'
+]);
+
+const textStyleCellNames = new Set([
+  'Color',
+  'Char.Color',
+  'Font',
+  'Size',
+  'Style',
+  'TextPosAfterBullet',
+  'TextBkgnd',
+  'TextBkgndTrans',
+  'TxtPinX',
+  'TxtPinY',
+  'TxtWidth',
+  'TxtHeight',
+  'TxtLocPinX',
+  'TxtLocPinY',
+  'TxtAngle'
+]);
+
 export async function readVsdxDiagramFromFile(filePath: string): Promise<{ bytes: Buffer; diagram: VsdxEditorDiagram }> {
   const bytes = await fs.readFile(filePath);
   return {
@@ -202,6 +265,7 @@ export async function readVsdxDiagram(bytes: Buffer, sourceName: string): Promis
       `This file could not be opened as a modern Visio package: ${error instanceof Error ? error.message : String(error)}`
     );
   }
+  const styleSheets = await readStyleSheets(zip);
   const pageMetadata = await readPageMetadata(zip);
   const masterShapes = await readMasterShapes(zip);
   const pageEntries = Object.keys(zip.files)
@@ -220,6 +284,7 @@ export async function readVsdxDiagram(bytes: Buffer, sourceName: string): Promis
     const imageDataUriByRelId = await readPageImageDataUris(zip, entry);
     const shapes = collectEditorShapes(toArray(pageContents?.Shapes?.Shape), {
       masterShapes,
+      styleSheets,
       imageDataUriByRelId
     });
     const unsupportedCount = shapes.filter(shape => !shape.editable).length;
@@ -240,7 +305,7 @@ export async function readVsdxDiagram(bytes: Buffer, sourceName: string): Promis
   const pages = pageResults.map(result => result?.page).filter(isDefined);
   const unsupportedNotes = pageResults.map(result => result?.unsupportedNote).filter(isDefined);
   if (pages.length === 0 && masterShapes.size > 0) {
-    const masterPages = createMasterPreviewPages(masterShapes);
+    const masterPages = createMasterPreviewPages(masterShapes, styleSheets);
     return {
       sourceName,
       formatSupport: 'modern-package',
@@ -277,11 +342,13 @@ function readLegacyXmlDiagram(bytes: Buffer, sourceName: string): VsdxEditorDiag
     return createUnsupportedVisioDiagram(sourceName, 'This Visio XML file does not contain a VisioDocument root element.');
   }
 
+  const styleSheets = readStyleSheetsFromDocument(document);
   const masterShapes = readLegacyXmlMasterShapes(document);
   const pageResults = toArray(document?.Pages?.Page).map((page, index) => {
     const normalized = normalizeLegacyXmlPage(page, index);
     const shapes = collectEditorShapes(toArray(normalized.pageContents?.Shapes?.Shape), {
       masterShapes,
+      styleSheets,
       imageDataUriByRelId: new Map()
     });
     const unsupportedCount = shapes.filter(shape => !shape.editable).length;
@@ -306,7 +373,7 @@ function readLegacyXmlDiagram(bytes: Buffer, sourceName: string): VsdxEditorDiag
       sourceName,
       formatSupport: 'legacy-xml',
       readOnlyReason: 'This Visio XML stencil/template has no regular pages. Master shapes are shown as read-only preview pages.',
-      pages: createMasterPreviewPages(masterShapes),
+      pages: createMasterPreviewPages(masterShapes, styleSheets),
       unsupportedNotes: [
         'No regular Visio XML pages were found. Showing read-only master/stencil previews instead.',
         ...unsupportedNotes
@@ -539,7 +606,7 @@ export function createUnsupportedVisioDiagram(sourceName: string, reason: string
   };
 }
 
-function createMasterPreviewPages(masterShapes: Map<string, MasterShapeEntry>): VsdxEditorPage[] {
+function createMasterPreviewPages(masterShapes: Map<string, MasterShapeEntry>, styleSheets: StyleSheetContext): VsdxEditorPage[] {
   return Array.from(masterShapes.entries()).map(([masterId, masterEntry], index) => {
     const masterShape = masterEntry.shape;
     const previewShape = normalizeMasterPreviewShape(masterShape, masterId);
@@ -550,6 +617,7 @@ function createMasterPreviewPages(masterShapes: Map<string, MasterShapeEntry>): 
     const pageHeight = Math.max(2.2, height + 1);
     const shapes = collectEditorShapes([previewShape], {
       masterShapes: new Map(),
+      styleSheets,
       imageDataUriByRelId: masterEntry.imageDataUriByRelId,
       readOnlyReason: 'Stencil/template master shapes are shown for preview and are not written back as page shapes.'
     });
@@ -724,13 +792,16 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const cells = toArray(shape?.Cell);
   const masterShape = readMasterShapeFor(shape, context.masterShapes);
   const masterCells = toArray(masterShape?.Cell);
-  const lineWeight = readCellNumber(cells, 'LineWeight') ?? readCellNumber(masterCells, 'LineWeight');
-  const linePattern = readCellNumber(cells, 'LinePattern') ?? readCellNumber(masterCells, 'LinePattern');
-  const beginArrow = readCellNumber(cells, 'BeginArrow') ?? readCellNumber(masterCells, 'BeginArrow');
-  const endArrow = readCellNumber(cells, 'EndArrow') ?? readCellNumber(masterCells, 'EndArrow');
-  const angle = readCellNumber(cells, 'Angle') ?? readCellNumber(masterCells, 'Angle') ?? 0;
+  const masterStyleCells = styleCellsForShape(masterShape, context.styleSheets);
+  const pageStyleCells = styleCellsForShape(shape, context.styleSheets);
+  const effectiveCells = mergeEffectiveCellLayers(masterStyleCells, masterCells, pageStyleCells, cells);
+  const lineWeight = readCellNumber(effectiveCells, 'LineWeight');
+  const linePattern = readCellNumber(effectiveCells, 'LinePattern');
+  const beginArrow = readCellNumber(effectiveCells, 'BeginArrow');
+  const endArrow = readCellNumber(effectiveCells, 'EndArrow');
+  const angle = readCellNumber(effectiveCells, 'Angle') ?? 0;
   const hasChildShapes = toArray(shape?.Shapes?.Shape).length > 0;
-  const isConnector = isConnectorShape(shape);
+  const isConnector = isConnectorShape(shape) || isConnectorShape(masterShape);
   const text = readShapeText(shape) || readShapeText(masterShape);
   const masterImageDataUriByRelId = readMasterImageDataUriByRelIdFor(shape, context.masterShapes);
   const imageDataUri = readShapeImageDataUri(shape, context.imageDataUriByRelId)
@@ -740,8 +811,8 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     id,
     name: String(shape?.Name ?? shape?.NameU ?? masterShape?.Name ?? masterShape?.NameU ?? id),
     text,
-    fill: readFillColor(cells, masterCells),
-    line: readLineColor(cells, masterCells),
+    fill: readFillColor(effectiveCells),
+    line: readLineColor(effectiveCells),
     linePattern,
     strokeWidth: Math.max(0.015, lineWeight ?? 0.02)
   };
@@ -753,8 +824,8 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     const endY = readCellNumber(cells, 'EndY');
     const pinX = readCellNumber(cells, 'PinX');
     const pinY = readCellNumber(cells, 'PinY');
-    const width = readCellNumber(cells, 'Width') ?? readCellNumber(masterCells, 'Width');
-    const height = readCellNumber(cells, 'Height') ?? readCellNumber(masterCells, 'Height');
+    const width = readCellNumber(effectiveCells, 'Width');
+    const height = readCellNumber(effectiveCells, 'Height');
     const geometryPath = width !== undefined && height !== undefined
       ? compileGeometryPath(shape, masterShape, width, height)
       : undefined;
@@ -780,8 +851,8 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
 
   const pinX = readCellNumber(cells, 'PinX');
   const pinY = readCellNumber(cells, 'PinY');
-  const width = readCellNumber(cells, 'Width') ?? readCellNumber(masterCells, 'Width');
-  const height = readCellNumber(cells, 'Height') ?? readCellNumber(masterCells, 'Height');
+  const width = readCellNumber(effectiveCells, 'Width');
+  const height = readCellNumber(effectiveCells, 'Height');
   const geometryPath = width !== undefined && height !== undefined
     ? compileGeometryPath(shape, masterShape, width, height)
     : undefined;
@@ -1154,6 +1225,42 @@ async function readPageImageDataUris(zip: JSZip, pageEntry: string): Promise<Map
   return readRelationshipImageDataUris(zip, pageEntry);
 }
 
+async function readStyleSheets(zip: JSZip): Promise<StyleSheetContext> {
+  const documentFile = zip.file('visio/document.xml');
+  if (!documentFile) {
+    return emptyStyleSheets();
+  }
+
+  const parsed = xmlParser.parse(await documentFile.async('text'));
+  const document = parsed.VisioDocument ?? parsed['VisioDocument'];
+  return readStyleSheetsFromDocument(document);
+}
+
+function readStyleSheetsFromDocument(document: any): StyleSheetContext {
+  const byId = new Map<string, StyleSheetEntry>();
+  for (const styleSheet of toArray(document?.StyleSheets?.StyleSheet)) {
+    const id = normalizedId(styleSheet?.ID);
+    if (!id) {
+      continue;
+    }
+
+    byId.set(id, {
+      id,
+      lineStyleId: normalizedId(styleSheet?.LineStyle),
+      fillStyleId: normalizedId(styleSheet?.FillStyle),
+      textStyleId: normalizedId(styleSheet?.TextStyle),
+      cells: toArray(styleSheet?.Cell),
+      sections: toArray(styleSheet?.Section)
+    });
+  }
+
+  return { byId, resolvedCellCache: new Map() };
+}
+
+function emptyStyleSheets(): StyleSheetContext {
+  return { byId: new Map(), resolvedCellCache: new Map() };
+}
+
 async function readRelationshipImageDataUris(zip: JSZip, sourceEntry: string): Promise<Map<string, string>> {
   const images = new Map<string, string>();
   const relsFile = zip.file(relationshipEntry(sourceEntry));
@@ -1234,23 +1341,21 @@ function readCellString(cells: unknown[], name: string): string | undefined {
   return typeof cell?.V === 'string' && cell.V.trim().length > 0 ? cell.V : undefined;
 }
 
-function readFillColor(cells: unknown[], masterCells: unknown[]): string {
-  const fillPattern = readCellNumber(cells, 'FillPattern') ?? readCellNumber(masterCells, 'FillPattern');
+function readFillColor(cells: unknown[]): string {
+  const fillPattern = readCellNumber(cells, 'FillPattern');
   if (fillPattern === 0) {
     return 'none';
   }
   return readColorCell(cells, 'FillForegnd')
-    ?? readColorCell(masterCells, 'FillForegnd')
     ?? '#ffffff';
 }
 
-function readLineColor(cells: unknown[], masterCells: unknown[]): string {
-  const linePattern = readCellNumber(cells, 'LinePattern') ?? readCellNumber(masterCells, 'LinePattern');
+function readLineColor(cells: unknown[]): string {
+  const linePattern = readCellNumber(cells, 'LinePattern');
   if (linePattern === 0) {
     return 'none';
   }
   return readColorCell(cells, 'LineColor')
-    ?? readColorCell(masterCells, 'LineColor')
     ?? '#586069';
 }
 
@@ -1259,14 +1364,20 @@ function readColorCell(cells: unknown[], name: string): string | undefined {
   if (!cell) {
     return undefined;
   }
-  return normalizeColor(cell.V) ?? normalizeColor(cell.F);
+  return normalizeColor(cell.F) ?? normalizeColor(cell.V);
 }
 
 function normalizeColor(value: unknown): string | undefined {
+  if (typeof value === 'number' && Number.isInteger(value)) {
+    return visioIndexedColor(value);
+  }
   if (typeof value !== 'string') {
     return undefined;
   }
   const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) {
+    return visioIndexedColor(Number(trimmed));
+  }
   const hex = trimmed.match(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/);
   if (hex) {
     const normalized = hex[1].length === 3
@@ -1285,6 +1396,29 @@ function normalizeColor(value: unknown): string | undefined {
   return undefined;
 }
 
+function visioIndexedColor(index: number): string | undefined {
+  switch (index) {
+    case 0:
+      return '#000000';
+    case 1:
+      return '#ffffff';
+    case 2:
+      return '#ff0000';
+    case 3:
+      return '#00ff00';
+    case 4:
+      return '#0000ff';
+    case 5:
+      return '#ffff00';
+    case 6:
+      return '#ff00ff';
+    case 7:
+      return '#00ffff';
+    default:
+      return undefined;
+  }
+}
+
 function toHexByte(value: number): string {
   return Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, '0');
 }
@@ -1292,6 +1426,119 @@ function toHexByte(value: number): string {
 function readCellFormula(cells: unknown[], name: string): string | undefined {
   const cell = cells.find((candidate: any) => candidate?.N === name) as any;
   return typeof cell?.F === 'string' && cell.F.trim().length > 0 ? cell.F : undefined;
+}
+
+function styleCellsForShape(shape: any, styleSheets: StyleSheetContext): any[] {
+  if (!shape) {
+    return [];
+  }
+
+  return mergeEffectiveCellLayers(
+    styleCellsForCategory(normalizedId(shape?.LineStyle), 'line', styleSheets),
+    styleCellsForCategory(normalizedId(shape?.FillStyle), 'fill', styleSheets),
+    styleCellsForCategory(normalizedId(shape?.TextStyle), 'text', styleSheets)
+  );
+}
+
+function styleCellsForCategory(
+  styleId: string | undefined,
+  category: StyleCategory,
+  styleSheets: StyleSheetContext,
+  seen = new Set<string>()
+): any[] {
+  if (!styleId || seen.has(`${category}:${styleId}`)) {
+    return [];
+  }
+  const cacheKey = `${category}:${styleId}`;
+  const cached = styleSheets.resolvedCellCache.get(cacheKey);
+  if (cached) {
+    return cached.map(cell => cloneXml(cell));
+  }
+
+  const styleSheet = styleSheets.byId.get(styleId);
+  if (!styleSheet) {
+    return [];
+  }
+
+  seen.add(cacheKey);
+  const parentStyleId = category === 'line'
+    ? styleSheet.lineStyleId
+    : category === 'fill'
+      ? styleSheet.fillStyleId
+      : styleSheet.textStyleId;
+
+  const baseCells = styleId === '0' ? [] : styleCellsForCategory('0', category, styleSheets, seen);
+  const parentCells = parentStyleId === '0' ? [] : styleCellsForCategory(parentStyleId, category, styleSheets, seen);
+  const resolved = mergeEffectiveCellLayers(
+    baseCells,
+    parentCells,
+    styleSheet.cells.filter(cell => isStyleCellForCategory(cell, category) && isMeaningfulStyleCell(cell))
+  );
+  styleSheets.resolvedCellCache.set(cacheKey, resolved.map(cell => cloneXml(cell)));
+  return resolved;
+}
+
+function mergeEffectiveCellLayers(...layers: any[][]): any[] {
+  return layers.reduce((merged, layer) => mergeEffectiveCells(merged, layer), [] as any[]);
+}
+
+function mergeEffectiveCells(baseCells: any[], overrideCells: any[]): any[] {
+  const merged = new Map<string, any>();
+  const order: string[] = [];
+  for (const cell of baseCells) {
+    const key = cellKey(cell, order.length);
+    merged.set(key, cloneXml(cell));
+    order.push(key);
+  }
+
+  for (const cell of overrideCells) {
+    const key = cellKey(cell, order.length);
+    if (!isMeaningfulEffectiveCell(cell)) {
+      continue;
+    }
+    if (!merged.has(key)) {
+      order.push(key);
+    }
+    merged.set(key, {
+      ...cloneXml(merged.get(key) ?? {}),
+      ...cloneXml(cell)
+    });
+  }
+
+  return order.map(key => merged.get(key)).filter(isDefined);
+}
+
+function isMeaningfulStyleCell(cell: any): boolean {
+  const formula = String(cell?.F ?? '').trim().toLowerCase();
+  if (formula === 'inh' || formula === 'no formula') {
+    return false;
+  }
+  return isMeaningfulEffectiveCell(cell);
+}
+
+function isStyleCellForCategory(cell: any, category: StyleCategory): boolean {
+  const name = String(cell?.N ?? '');
+  if (!name) {
+    return false;
+  }
+  if (category === 'line') {
+    return lineStyleCellNames.has(name);
+  }
+  if (category === 'fill') {
+    return fillStyleCellNames.has(name);
+  }
+  return textStyleCellNames.has(name);
+}
+
+function isMeaningfulEffectiveCell(cell: any): boolean {
+  const formula = String(cell?.F ?? '').trim().toLowerCase();
+  if (String(cell?.V ?? '').trim().toLowerCase() === 'themed' && formula.length === 0) {
+    return false;
+  }
+  if (String(cell?.V ?? '').trim().toLowerCase() === 'themed' && (formula === 'inh' || formula === 'no formula')) {
+    return false;
+  }
+  return true;
 }
 
 function readMasterShapeFor(shape: any, masterShapes: Map<string, MasterShapeEntry>): any | undefined {
