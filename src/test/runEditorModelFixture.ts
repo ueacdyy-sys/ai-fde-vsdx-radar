@@ -1167,6 +1167,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
             <EndX>5</EndX>
             <EndY>4</EndY>
           </XForm1D>
+          <Line><BeginArrow>4</BeginArrow><EndArrow>13</EndArrow></Line>
         </Shape>
       </Shapes>
     </Page>
@@ -1220,6 +1221,8 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.ok(connector, 'expected legacy XML connector');
   assert.strictEqual(connector.kind, 'connector');
   assert.strictEqual(connector.editable, true);
+  assert.strictEqual(connector.beginArrow, 4, 'expected legacy XML direct begin arrow metadata');
+  assert.strictEqual(connector.endArrow, 13, 'expected legacy XML direct end arrow metadata');
 
   const updated = replaceShapeInDiagram(replaceShapeInDiagram(diagram, {
     pageEntry: diagram.pages[0].entry,
@@ -1277,6 +1280,8 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
       <Cell N="LinePattern" V="2"/>
       <Cell N="LineCap" V="1"/>
       <Cell N="Rounding" V="0.16"/>
+      <Cell N="BeginArrow" V="4"/>
+      <Cell N="EndArrow" V="13"/>
       <Cell N="BeginArrowSize" V="2"/>
       <Cell N="EndArrowSize" V="4"/>
       <Cell N="LineWeight" V="0.04"/>
@@ -1312,6 +1317,14 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
             <LineTo IX="2"><X>2</X><Y>0</Y></LineTo>
           </Geom>
         </Shape>
+        <Shape ID="2" NameU="StyledLegacyConnector" OneD="1" LineStyle="5">
+          <XForm1D>
+            <BeginX>3</BeginX>
+            <BeginY>4</BeginY>
+            <EndX>6</EndX>
+            <EndY>4</EndY>
+          </XForm1D>
+        </Shape>
       </Shapes>
     </Page>
   </Pages>
@@ -1319,6 +1332,7 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
 
   const diagram = await readVsdxDiagram(source, 'legacy-stylesheet-fixture.vdx');
   const shape = diagram.pages[0]?.shapes[0];
+  const connector = diagram.pages[0]?.shapes.find(candidate => candidate.id === '2');
   assert.strictEqual(shape?.fill, '#224466', 'expected legacy XML FillStyle to be applied');
   assert.strictEqual(shape?.fillPattern, 5, 'expected legacy XML FillStyle fill pattern to be applied');
   assert.strictEqual(shape?.fillBackground, '#ddeeff', 'expected legacy XML FillStyle fill background to be applied');
@@ -1329,6 +1343,11 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
   assert.ok(Math.abs((shape?.rounding ?? 0) - 0.16) < 0.0001, 'expected legacy XML line rounding to be applied');
   assert.strictEqual(shape?.beginArrowSize, 2, 'expected legacy XML begin arrow size to be applied');
   assert.strictEqual(shape?.endArrowSize, 4, 'expected legacy XML end arrow size to be applied');
+  assert.strictEqual(connector?.kind, 'connector', 'expected legacy XML styled connector');
+  assert.strictEqual(connector?.beginArrow, 4, 'expected legacy XML connector begin arrow to inherit from LineStyle');
+  assert.strictEqual(connector?.endArrow, 13, 'expected legacy XML connector end arrow to inherit from LineStyle');
+  assert.strictEqual(connector?.beginArrowSize, 2, 'expected legacy XML connector begin arrow size to inherit from LineStyle');
+  assert.strictEqual(connector?.endArrowSize, 4, 'expected legacy XML connector end arrow size to inherit from LineStyle');
   assert.strictEqual(shape?.shadow?.color, '#101820', 'expected legacy XML FillStyle shadow color to be applied');
   assert.ok(Math.abs((shape?.shadow?.opacity ?? 0) - 0.55) < 0.0001, 'expected legacy XML FillStyle shadow opacity to be applied');
   assert.ok(Math.abs((shape?.shadow?.offsetX ?? 0) - 0.08) < 0.0001, 'expected legacy XML FillStyle shadow offset X to be applied');

@@ -2,6 +2,13 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.37 - 2026-06-12
+
+### Fixed
+
+- Fixed legacy Visio XML parsing for connector arrow types by collecting `BeginArrow` and `EndArrow` cells from legacy XML line blocks and styles.
+- Added regression coverage for direct legacy XML connector arrows and inherited legacy XML LineStyle arrow types.
+
 ## 0.1.36 - 2026-06-12
 
 ### Added
