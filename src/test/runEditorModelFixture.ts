@@ -600,6 +600,7 @@ async function verifiesTextStyleCells(): Promise<void> {
       <Cell N="RightMargin" F="GUARD(0.12)"/>
       <Cell N="TopMargin" V="0.13"/>
       <Cell N="BottomMargin" V="0.14"/>
+      <Cell N="TextPosAfterBullet" V="0.2"/>
       <Cell N="TextBkgnd" V="#ffeeaa"/>
       <Cell N="TextBkgndTrans" V="25"/>
       <Text>Direct text style</Text>
@@ -613,7 +614,7 @@ async function verifiesTextStyleCells(): Promise<void> {
         <Row IX="0"><Cell N="Color" F="RGB(17,34,51)"/><Cell N="Font" V="7"/><Cell N="Size" V="0.25" U="IN"/><Cell N="Style" F="GUARD(2)"/></Row>
       </Section>
       <Section N="Paragraph" IX="0">
-        <Row IX="0"><Cell N="HAlign" V="2"/></Row>
+        <Row IX="0"><Cell N="HAlign" V="2"/><Cell N="TextPosAfterBullet" F="GUARD(0.21)"/></Row>
       </Section>
       <Text>Character text style</Text>
     </Shape>
@@ -634,6 +635,7 @@ async function verifiesTextStyleCells(): Promise<void> {
   assert.ok(Math.abs((direct?.textStyle?.margins?.right ?? 0) - 0.12) < 0.0001, 'expected formula right text margin');
   assert.ok(Math.abs((direct?.textStyle?.margins?.top ?? 0) - 0.13) < 0.0001, 'expected direct top text margin');
   assert.ok(Math.abs((direct?.textStyle?.margins?.bottom ?? 0) - 0.14) < 0.0001, 'expected direct bottom text margin');
+  assert.ok(Math.abs((direct?.textStyle?.textPosAfterBullet ?? 0) - 0.2) < 0.0001, 'expected direct text position after bullet');
   assert.strictEqual(direct?.textStyle?.background, '#ffeeaa', 'expected direct text background to be parsed');
   assert.ok(Math.abs((direct?.textStyle?.backgroundOpacity ?? 0) - 0.75) < 0.0001, 'expected text background transparency to become opacity');
   assert.strictEqual(character?.textStyle?.color, '#112233', 'expected character row text color to be parsed');
@@ -643,6 +645,7 @@ async function verifiesTextStyleCells(): Promise<void> {
   assert.strictEqual(character?.textStyle?.italic, true, 'expected character row italic style');
   assert.strictEqual(character?.textStyle?.underline, false, 'expected character row underline style');
   assert.strictEqual(character?.textStyle?.horizontalAlign, 'right', 'expected paragraph row horizontal alignment');
+  assert.ok(Math.abs((character?.textStyle?.textPosAfterBullet ?? 0) - 0.21) < 0.0001, 'expected paragraph row text position after bullet');
 }
 
 async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Promise<void> {
@@ -670,6 +673,7 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
       <Cell N="VerticalAlign" V="2"/>
       <Cell N="LeftMargin" V="0.09"/>
       <Cell N="RightMargin" V="0.08"/>
+      <Cell N="TextPosAfterBullet" V="0.18"/>
       <Section N="Character" IX="0"><Row IX="0"><Cell N="Font" V="11"/><Cell N="Style" V="3"/></Row></Section>
       <Section N="Paragraph" IX="0"><Row IX="0"><Cell N="HAlign" V="0"/></Row></Section>
     </StyleSheet>
@@ -770,6 +774,7 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
   assert.strictEqual(direct?.textStyle?.verticalAlign, 'bottom', 'expected page shape vertical text alignment to inherit from TextStyle');
   assert.ok(Math.abs((direct?.textStyle?.margins?.left ?? 0) - 0.09) < 0.0001, 'expected page shape left margin to inherit from TextStyle');
   assert.ok(Math.abs((direct?.textStyle?.margins?.right ?? 0) - 0.08) < 0.0001, 'expected page shape right margin to inherit from TextStyle');
+  assert.ok(Math.abs((direct?.textStyle?.textPosAfterBullet ?? 0) - 0.18) < 0.0001, 'expected page shape text position after bullet to inherit from TextStyle');
   assert.strictEqual(direct?.linePattern, 2, 'expected page shape line pattern to inherit from LineStyle');
   assert.strictEqual(direct?.lineCap, 1, 'expected page shape line cap to inherit from LineStyle');
   assert.ok(Math.abs((direct?.rounding ?? 0) - 0.17) < 0.0001, 'expected page shape rounding to inherit from LineStyle');
@@ -786,6 +791,7 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
   assert.strictEqual(inheritedFromMaster?.shadow?.color, '#222222', 'expected master style shadow to reach page instance');
   assert.ok(Math.abs((inheritedFromMaster?.shadow?.blur ?? 0) - 0.11) < 0.0001, 'expected master style shadow blur to reach page instance');
   assert.strictEqual(inheritedFromMaster?.textStyle?.fontFamily, 'Aptos', 'expected master style font family to reach page instance');
+  assert.ok(Math.abs((inheritedFromMaster?.textStyle?.textPosAfterBullet ?? 0) - 0.18) < 0.0001, 'expected master style text position after bullet to reach page instance');
   assert.strictEqual(inheritedFromMaster?.width, 2, 'expected master width to remain available through effective cells');
   assert.strictEqual(inheritedFromMaster?.height, 1, 'expected master height to remain available through effective cells');
   assert.strictEqual(connector?.kind, 'connector');
@@ -1134,6 +1140,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
             <RightMargin>0.04</RightMargin>
             <TopMargin>0.05</TopMargin>
             <BottomMargin>0.06</BottomMargin>
+            <TextPosAfterBullet>0.12</TextPosAfterBullet>
           </TextBlock>
           <Para IX="0">
             <HAlign>2</HAlign>
@@ -1202,6 +1209,7 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.ok(Math.abs((shape.textStyle?.margins?.right ?? 0) - 0.04) < 0.0001, 'expected legacy XML right text margin metadata');
   assert.ok(Math.abs((shape.textStyle?.margins?.top ?? 0) - 0.05) < 0.0001, 'expected legacy XML top text margin metadata');
   assert.ok(Math.abs((shape.textStyle?.margins?.bottom ?? 0) - 0.06) < 0.0001, 'expected legacy XML bottom text margin metadata');
+  assert.ok(Math.abs((shape.textStyle?.textPosAfterBullet ?? 0) - 0.12) < 0.0001, 'expected legacy XML text position after bullet metadata');
   assert.strictEqual(shape.textStyle?.background, '#ddeeff', 'expected legacy XML text background metadata');
   assert.ok(Math.abs((shape.textStyle?.backgroundOpacity ?? 0) - 0.5) < 0.0001, 'expected legacy XML text background transparency metadata');
   assert.ok(Math.abs((shape.textBox?.x ?? 0) - 1) < 0.0001, 'expected legacy XML text box x');
@@ -1283,6 +1291,7 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
       <Cell N="VerticalAlign" V="0"/>
       <Cell N="TopMargin" V="0.07"/>
       <Cell N="BottomMargin" V="0.08"/>
+      <Cell N="TextPosAfterBullet" V="0.14"/>
       <Section N="Character" IX="0"><Row IX="0"><Cell N="Color" V="#123456"/><Cell N="Font" V="8"/><Cell N="Size" V="16" U="PT"/><Cell N="Style" V="4"/></Row></Section>
       <Section N="Paragraph" IX="0"><Row IX="0"><Cell N="HAlign" V="1"/></Row></Section>
     </StyleSheet>
@@ -1336,6 +1345,7 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
   assert.strictEqual(shape?.textStyle?.verticalAlign, 'top', 'expected legacy XML TextStyle vertical alignment to be applied');
   assert.ok(Math.abs((shape?.textStyle?.margins?.top ?? 0) - 0.07) < 0.0001, 'expected legacy XML TextStyle top margin to be applied');
   assert.ok(Math.abs((shape?.textStyle?.margins?.bottom ?? 0) - 0.08) < 0.0001, 'expected legacy XML TextStyle bottom margin to be applied');
+  assert.ok(Math.abs((shape?.textStyle?.textPosAfterBullet ?? 0) - 0.14) < 0.0001, 'expected legacy XML TextStyle text position after bullet to be applied');
   assert.strictEqual(shape?.textStyle?.background, '#f0f0f0', 'expected legacy XML TextStyle background to be applied');
   assert.ok(Math.abs((shape?.textStyle?.backgroundOpacity ?? 0) - 0.8) < 0.0001, 'expected legacy XML TextStyle background opacity to be applied');
 }

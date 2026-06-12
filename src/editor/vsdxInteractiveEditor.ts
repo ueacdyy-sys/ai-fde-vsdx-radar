@@ -1037,7 +1037,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         text.setAttribute('dominant-baseline', textPosition.baseline);
         lines.slice(0, 5).forEach((line, index) => {
           const tspan = document.createElementNS(svgNS, 'tspan');
-          tspan.setAttribute('x', String(textPosition.x));
+          tspan.setAttribute('x', String(textLineX(shape, textPosition, index)));
           tspan.setAttribute('dy', index === 0 ? '0' : String(lineHeight));
           tspan.textContent = line;
           text.append(tspan);
@@ -1295,6 +1295,18 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         y = textBox.y + textBox.height - lineSpan - lineHeight / 2;
       }
       return { x, y, anchor, baseline };
+    }
+
+    function textLineX(shape, textPosition, index) {
+      const style = shape.textStyle || {};
+      if (index > 0 || style.horizontalAlign !== 'left') {
+        return textPosition.x;
+      }
+      const offset = numberOr(style.textPosAfterBullet, 0);
+      if (offset <= 0) {
+        return textPosition.x;
+      }
+      return round4(textPosition.x + offset);
     }
 
     function applyTextStyle(text, shape) {

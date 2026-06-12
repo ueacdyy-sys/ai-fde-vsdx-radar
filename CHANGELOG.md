@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.36 - 2026-06-12
+
+### Added
+
+- Added semantic support for Visio `TextPosAfterBullet` cells so left-aligned list text can render the intended post-bullet text position in the interactive SVG editor.
+- Preserves `TextPosAfterBullet` inheritance through Paragraph sections, TextStyle StyleSheets, master shapes, and legacy Visio XML files.
+- Added regression coverage for direct modern package values, paragraph-row formulas, inherited TextStyle values, master-style inheritance, and legacy Visio XML text-block metadata.
+
 ## 0.1.35 - 2026-06-12
 
 ### Added

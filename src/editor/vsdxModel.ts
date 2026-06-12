@@ -101,6 +101,7 @@ export interface VsdxEditorTextStyle {
   underline?: boolean;
   horizontalAlign?: 'left' | 'center' | 'right';
   verticalAlign?: 'top' | 'middle' | 'bottom';
+  textPosAfterBullet?: number;
   margins?: VsdxEditorTextMargins;
   background?: string;
   backgroundOpacity?: number;
@@ -240,6 +241,7 @@ const legacyXmlCellNames = new Set([
   'RightMargin',
   'TopMargin',
   'BottomMargin',
+  'TextPosAfterBullet',
   'TextBkgnd',
   'TextBkgndTrans',
   'TxtPinX',
@@ -1677,6 +1679,8 @@ function readTextStyle(
   const horizontalAlign = readHorizontalAlign(paragraphCells, refs)
     ?? readHorizontalAlign(cells, refs);
   const verticalAlign = readVerticalAlign(cells, refs);
+  const textPosAfterBullet = readTextPositionCell(paragraphCells, 'TextPosAfterBullet', refs)
+    ?? readTextPositionCell(cells, 'TextPosAfterBullet', refs);
   const margins = readTextMargins(cells, refs);
   const background = readColorCell(cells, 'TextBkgnd');
   const backgroundOpacity = readOpacityCell(cells, 'TextBkgndTrans', refs);
@@ -1700,6 +1704,9 @@ function readTextStyle(
   }
   if (verticalAlign) {
     style.verticalAlign = verticalAlign;
+  }
+  if (textPosAfterBullet !== undefined) {
+    style.textPosAfterBullet = textPosAfterBullet;
   }
   if (margins) {
     style.margins = margins;
@@ -1757,6 +1764,15 @@ function readVerticalAlign(cells: unknown[], refs?: Map<string, number>): VsdxEd
     return 'bottom';
   }
   return 'middle';
+}
+
+function readTextPositionCell(cells: unknown[], name: string, refs?: Map<string, number>): number | undefined {
+  const cell = cells.find((candidate: any) => candidate?.N === name) as any;
+  const value = readCellNumber(cells, name, refs) ?? readUnitNumber(cell?.V) ?? readUnitNumber(cell?.F);
+  if (value === undefined || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return Math.max(0, value);
 }
 
 function readTextMargins(cells: unknown[], refs?: Map<string, number>): VsdxEditorTextMargins | undefined {
