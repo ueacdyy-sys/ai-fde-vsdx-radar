@@ -907,6 +907,12 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       variants.forEach(key => {
         defs.append(createArrowMarker('start', key), createArrowMarker('end', key));
       });
+      page.shapes.filter(shape => shape.kind === 'shape').forEach(shape => {
+        const spec = fillPatternSpec(shape);
+        if (spec) {
+          defs.append(createFillPattern(spec));
+        }
+      });
       return defs;
     }
 
@@ -964,7 +970,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         path.classList.add('shape-outline');
         path.setAttribute('d', shape.geometryPath);
         path.setAttribute('transform', 'translate(' + x + ' ' + y + ')');
-        path.setAttribute('fill', shape.imageDataUri ? 'none' : safeColor(shape.fill, '#ffffff'));
+        path.setAttribute('fill', shape.imageDataUri ? 'none' : shapeFill(shape));
         path.setAttribute('stroke', safeColor(shape.line, '#586069'));
         path.setAttribute('stroke-width', String(Math.max(0.012, numberOr(shape.strokeWidth, 0.02))));
         path.setAttribute('stroke-linecap', lineCap(shape));
@@ -980,7 +986,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         rect.setAttribute('width', String(width));
         rect.setAttribute('height', String(height));
         rect.setAttribute('rx', String(Math.min(0.08, height / 6)));
-        rect.setAttribute('fill', shape.imageDataUri ? 'none' : safeColor(shape.fill, '#ffffff'));
+        rect.setAttribute('fill', shape.imageDataUri ? 'none' : shapeFill(shape));
         rect.setAttribute('stroke', safeColor(shape.line, '#586069'));
         rect.setAttribute('stroke-width', String(Math.max(0.012, numberOr(shape.strokeWidth, 0.02))));
         rect.setAttribute('stroke-linecap', lineCap(shape));
@@ -1086,6 +1092,85 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       rect.setAttribute('fill-opacity', String(opacity));
       group.append(rect);
       return group;
+    }
+
+    function shapeFill(shape) {
+      const spec = fillPatternSpec(shape);
+      if (spec) {
+        return 'url(#' + spec.id + ')';
+      }
+      return safeColor(shape.fill, '#ffffff');
+    }
+
+    function fillPatternSpec(shape) {
+      const pattern = Math.round(numberOr(shape.fillPattern, 1));
+      if (pattern <= 1) {
+        return null;
+      }
+      const foreground = safeColor(shape.fill, '#ffffff');
+      const background = safeColor(shape.fillBackground, 'none');
+      if (foreground === 'none' || background === 'none') {
+        return null;
+      }
+      const foregroundOpacity = clamp(numberOr(shape.fillOpacity, 1), 0, 1);
+      const backgroundOpacity = clamp(numberOr(shape.fillBackgroundOpacity, 1), 0, 1);
+      if (foregroundOpacity <= 0 && backgroundOpacity <= 0) {
+        return null;
+      }
+      return {
+        id: 'fill-pattern-' + pattern + '-' + colorKey(foreground) + '-' + Math.round(foregroundOpacity * 100) + '-' + colorKey(background) + '-' + Math.round(backgroundOpacity * 100),
+        pattern,
+        foreground,
+        foregroundOpacity,
+        background,
+        backgroundOpacity
+      };
+    }
+
+    function createFillPattern(spec) {
+      const pattern = document.createElementNS(svgNS, 'pattern');
+      pattern.id = spec.id;
+      pattern.setAttribute('patternUnits', 'userSpaceOnUse');
+      pattern.setAttribute('width', '0.24');
+      pattern.setAttribute('height', '0.24');
+
+      const background = document.createElementNS(svgNS, 'rect');
+      background.setAttribute('width', '0.24');
+      background.setAttribute('height', '0.24');
+      background.setAttribute('fill', spec.background);
+      background.setAttribute('fill-opacity', String(spec.backgroundOpacity));
+      pattern.append(background);
+
+      const line = document.createElementNS(svgNS, 'path');
+      line.setAttribute('d', fillPatternPath(spec.pattern));
+      line.setAttribute('stroke', spec.foreground);
+      line.setAttribute('stroke-width', '0.035');
+      line.setAttribute('stroke-opacity', String(spec.foregroundOpacity));
+      line.setAttribute('stroke-linecap', 'square');
+      pattern.append(line);
+      return pattern;
+    }
+
+    function fillPatternPath(pattern) {
+      if (pattern === 2) {
+        return 'M 0 0.12 H 0.24';
+      }
+      if (pattern === 3) {
+        return 'M 0.12 0 V 0.24';
+      }
+      if (pattern === 4) {
+        return 'M 0 0.24 L 0.24 0';
+      }
+      if (pattern === 5) {
+        return 'M 0 0 L 0.24 0.24';
+      }
+      if (pattern === 6) {
+        return 'M 0 0.12 H 0.24 M 0.12 0 V 0.24';
+      }
+      if (pattern === 7) {
+        return 'M 0 0 L 0.24 0.24 M 0 0.24 L 0.24 0';
+      }
+      return 'M 0 0.12 H 0.24 M 0.12 0 V 0.24 M 0 0 L 0.24 0.24 M 0 0.24 L 0.24 0';
     }
 
     function resolveTextBox(page, shape, shapeX, shapeY, shapeWidth, shapeHeight) {
@@ -1685,6 +1770,10 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         return 'none';
       }
       return /^#[0-9a-fA-F]{3,8}$/.test(value) ? value : fallback;
+    }
+
+    function colorKey(value) {
+      return String(value).replace(/[^0-9a-zA-Z_-]/g, '');
     }
 
     function isLegacyConvertRequired() {

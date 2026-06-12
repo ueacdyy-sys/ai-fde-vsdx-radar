@@ -14,6 +14,7 @@ async function main(): Promise<void> {
   await verifiesTextBoxTransformCells();
   await verifiesColorFormulaAndNoPaint();
   await verifiesPaintTransparencyCells();
+  await verifiesFillPatternBackgroundCells();
   await verifiesShapeLinePatternCells();
   await verifiesShadowStyleCells();
   await verifiesTextStyleCells();
@@ -432,6 +433,46 @@ async function verifiesPaintTransparencyCells(): Promise<void> {
   assert.ok(Math.abs((connector.strokeOpacity ?? 0) - 0.75) < 0.0001, 'expected formula line transparency to become connector stroke opacity');
 }
 
+async function verifiesFillPatternBackgroundCells(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Pattern Fill">
+      <Cell N="PinX" V="2"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="FillPattern" F="GUARD(6)"/>
+      <Cell N="FillForegnd" V="#112233"/>
+      <Cell N="FillForegndTrans" V="20"/>
+      <Cell N="FillBkgnd" F="RGB(220,238,255)"/>
+      <Cell N="FillBkgndTrans" V="50"/>
+    </Shape>
+    <Shape ID="2" NameU="Solid Fill">
+      <Cell N="PinX" V="5"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="FillPattern" V="1"/>
+      <Cell N="FillForegnd" V="#445566"/>
+      <Cell N="FillBkgnd" V="#ffffff"/>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'fill-pattern-fixture.vsdx');
+  const patterned = diagram.pages[0]?.shapes[0];
+  const solid = diagram.pages[0]?.shapes[1];
+  assert.strictEqual(patterned?.fillPattern, 6, 'expected fill pattern metadata');
+  assert.strictEqual(patterned?.fill, '#112233', 'expected fill foreground color');
+  assert.ok(Math.abs((patterned?.fillOpacity ?? 0) - 0.8) < 0.0001, 'expected fill foreground opacity');
+  assert.strictEqual(patterned?.fillBackground, '#dceeff', 'expected fill background color');
+  assert.ok(Math.abs((patterned?.fillBackgroundOpacity ?? 0) - 0.5) < 0.0001, 'expected fill background opacity');
+  assert.strictEqual(solid?.fillBackground, undefined, 'expected solid fill to skip background pattern metadata');
+}
+
 async function verifiesShapeLinePatternCells(): Promise<void> {
   const zip = new JSZip();
   addSinglePageMetadata(zip);
@@ -561,7 +602,9 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
     </StyleSheet>
     <StyleSheet ID="7" NameU="Flow Normal" LineStyle="3" FillStyle="3" TextStyle="3">
       <Cell N="FillForegnd" V="#123456"/>
-      <Cell N="FillPattern" V="1"/>
+      <Cell N="FillBkgnd" V="#f6d365"/>
+      <Cell N="FillBkgndTrans" V="40"/>
+      <Cell N="FillPattern" V="6"/>
       <Cell N="LineColor" V="#654321"/>
       <Cell N="LinePattern" V="2"/>
       <Cell N="LineCap" V="1"/>
@@ -639,6 +682,9 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
   const inheritedFromMaster = diagram.pages[0]?.shapes.find(shape => shape.id === '2');
   const connector = diagram.pages[0]?.shapes.find(shape => shape.id === '3');
   assert.strictEqual(direct?.fill, '#123456', 'expected page shape fill to inherit from FillStyle');
+  assert.strictEqual(direct?.fillPattern, 6, 'expected page shape fill pattern to inherit from FillStyle');
+  assert.strictEqual(direct?.fillBackground, '#f6d365', 'expected page shape fill background to inherit from FillStyle');
+  assert.ok(Math.abs((direct?.fillBackgroundOpacity ?? 0) - 0.6) < 0.0001, 'expected page shape fill background opacity to inherit from FillStyle');
   assert.strictEqual(direct?.line, '#654321', 'expected page shape line to inherit from LineStyle');
   assert.strictEqual(direct?.linePattern, 2, 'expected page shape line pattern to inherit from LineStyle');
   assert.strictEqual(direct?.lineCap, 1, 'expected page shape line cap to inherit from LineStyle');
@@ -648,6 +694,7 @@ async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Pr
   assert.ok(Math.abs((direct?.shadow?.offsetY ?? 0) - -0.1) < 0.0001, 'expected page shape shadow offset Y to inherit from FillStyle');
   assert.ok(Math.abs((direct?.strokeWidth ?? 0) - 0.03) < 0.0001, 'expected page shape stroke width to inherit from LineStyle');
   assert.strictEqual(inheritedFromMaster?.fill, '#123456', 'expected master style fill to reach page instance');
+  assert.strictEqual(inheritedFromMaster?.fillBackground, '#f6d365', 'expected master style fill background to reach page instance');
   assert.strictEqual(inheritedFromMaster?.line, '#654321', 'expected master style line to reach page instance');
   assert.strictEqual(inheritedFromMaster?.shadow?.color, '#222222', 'expected master style shadow to reach page instance');
   assert.strictEqual(inheritedFromMaster?.width, 2, 'expected master width to remain available through effective cells');
@@ -966,6 +1013,11 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
           </XForm>
           <Line><LinePattern>2</LinePattern><LineCap>2</LineCap><BeginArrowSize>1</BeginArrowSize><EndArrowSize>4</EndArrowSize></Line>
           <Fill>
+            <FillPattern>7</FillPattern>
+            <FillForegnd>#aa5500</FillForegnd>
+            <FillForegndTrans>10</FillForegndTrans>
+            <FillBkgnd>RGB(250,240,210)</FillBkgnd>
+            <FillBkgndTrans>30</FillBkgndTrans>
             <ShdwPattern>1</ShdwPattern>
             <ShdwForegnd>RGB(10,20,30)</ShdwForegnd>
             <ShdwForegndTrans>25</ShdwForegndTrans>
@@ -1017,6 +1069,11 @@ async function verifiesLegacyXmlDrawingPreviewAndWriteBack(): Promise<void> {
   assert.strictEqual(shape.text, 'Legacy text');
   assert.strictEqual(shape.lineCap, 2, 'expected legacy XML direct line cap metadata');
   assert.strictEqual(shape.linePattern, 2, 'expected legacy XML direct line pattern metadata');
+  assert.strictEqual(shape.fillPattern, 7, 'expected legacy XML direct fill pattern metadata');
+  assert.strictEqual(shape.fill, '#aa5500', 'expected legacy XML direct fill foreground metadata');
+  assert.ok(Math.abs((shape.fillOpacity ?? 0) - 0.9) < 0.0001, 'expected legacy XML direct fill foreground opacity metadata');
+  assert.strictEqual(shape.fillBackground, '#faf0d2', 'expected legacy XML direct fill background metadata');
+  assert.ok(Math.abs((shape.fillBackgroundOpacity ?? 0) - 0.7) < 0.0001, 'expected legacy XML direct fill background opacity metadata');
   assert.strictEqual(shape.beginArrowSize, 1, 'expected legacy XML direct begin arrow size metadata');
   assert.strictEqual(shape.endArrowSize, 4, 'expected legacy XML direct end arrow size metadata');
   assert.strictEqual(shape.shadow?.color, '#0a141e', 'expected legacy XML direct shadow color metadata');
@@ -1084,6 +1141,9 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
     </StyleSheet>
     <StyleSheet ID="5" NameU="Legacy Style" LineStyle="0" FillStyle="0" TextStyle="0">
       <Cell N="FillForegnd" V="#224466"/>
+      <Cell N="FillBkgnd" V="#ddeeff"/>
+      <Cell N="FillBkgndTrans" V="25"/>
+      <Cell N="FillPattern" V="5"/>
       <Cell N="LineColor" V="#6688aa"/>
       <Cell N="LinePattern" V="2"/>
       <Cell N="LineCap" V="1"/>
@@ -1124,6 +1184,9 @@ async function verifiesLegacyXmlStyleSheetInheritance(): Promise<void> {
   const diagram = await readVsdxDiagram(source, 'legacy-stylesheet-fixture.vdx');
   const shape = diagram.pages[0]?.shapes[0];
   assert.strictEqual(shape?.fill, '#224466', 'expected legacy XML FillStyle to be applied');
+  assert.strictEqual(shape?.fillPattern, 5, 'expected legacy XML FillStyle fill pattern to be applied');
+  assert.strictEqual(shape?.fillBackground, '#ddeeff', 'expected legacy XML FillStyle fill background to be applied');
+  assert.ok(Math.abs((shape?.fillBackgroundOpacity ?? 0) - 0.75) < 0.0001, 'expected legacy XML FillStyle fill background opacity to be applied');
   assert.strictEqual(shape?.line, '#6688aa', 'expected legacy XML LineStyle to be applied');
   assert.strictEqual(shape?.linePattern, 2, 'expected legacy XML line pattern to be applied');
   assert.strictEqual(shape?.lineCap, 1, 'expected legacy XML line cap to be applied');

@@ -2,6 +2,14 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.1.29 - 2026-06-12
+
+### Added
+
+- Added semantic support for Visio patterned fills that use `FillPattern`, `FillBkgnd`, and `FillBkgndTrans`, rendering lightweight SVG fill patterns in the interactive editor without invoking Visio COM.
+- Added fill background inheritance through StyleSheet, master, page-shape, formula, and legacy Visio XML paths.
+- Added regression coverage for direct modern Visio package pattern fills, inherited StyleSheet pattern fills, solid-fill fallback behavior, and legacy Visio XML fill background metadata.
+
 ## 0.1.28 - 2026-06-12
 
 ### Fixed

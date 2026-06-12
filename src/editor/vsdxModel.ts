@@ -46,6 +46,9 @@ export interface VsdxEditorShape {
   reason?: string;
   fill: string;
   fillOpacity?: number;
+  fillPattern?: number;
+  fillBackground?: string;
+  fillBackgroundOpacity?: number;
   line: string;
   strokeOpacity?: number;
   linePattern?: number;
@@ -194,7 +197,10 @@ const legacyXmlCellNames = new Set([
   'BeginArrowSize',
   'EndArrowSize',
   'FillForegnd',
+  'FillBkgnd',
   'FillPattern',
+  'FillForegndTrans',
+  'FillBkgndTrans',
   'ShdwForegnd',
   'ShdwForegndTrans',
   'ShdwPattern',
@@ -881,6 +887,7 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const endArrow = readCellNumber(effectiveCells, 'EndArrow', shapeFormulaRefs);
   const beginArrowSize = readCellNumber(effectiveCells, 'BeginArrowSize', shapeFormulaRefs);
   const endArrowSize = readCellNumber(effectiveCells, 'EndArrowSize', shapeFormulaRefs);
+  const fillPattern = readCellNumber(effectiveCells, 'FillPattern', shapeFormulaRefs);
   const angle = readCellNumber(effectiveCells, 'Angle', shapeFormulaRefs) ?? 0;
   const textBox = readTextBox(effectiveCells, shapeFormulaRefs);
   const textStyle = readTextStyle(effectiveCells, effectiveSections, shapeFormulaRefs);
@@ -898,6 +905,9 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     text,
     fill: readFillColor(effectiveCells),
     fillOpacity: readOpacityCell(effectiveCells, 'FillForegndTrans', shapeFormulaRefs),
+    fillPattern,
+    fillBackground: readFillBackgroundColor(effectiveCells),
+    fillBackgroundOpacity: readOpacityCell(effectiveCells, 'FillBkgndTrans', shapeFormulaRefs),
     line: readLineColor(effectiveCells),
     strokeOpacity: readOpacityCell(effectiveCells, 'LineColorTrans', shapeFormulaRefs),
     linePattern,
@@ -1665,6 +1675,14 @@ function readFillColor(cells: unknown[]): string {
   }
   return readColorCell(cells, 'FillForegnd')
     ?? '#ffffff';
+}
+
+function readFillBackgroundColor(cells: unknown[]): string | undefined {
+  const fillPattern = readCellNumber(cells, 'FillPattern');
+  if (fillPattern === undefined || fillPattern <= 1) {
+    return undefined;
+  }
+  return readColorCell(cells, 'FillBkgnd');
 }
 
 function readLineColor(cells: unknown[]): string {
