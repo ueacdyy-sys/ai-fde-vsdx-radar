@@ -178,6 +178,10 @@ interface GeometryContext {
   refs: Map<string, number>;
 }
 
+interface GeometryCompileState {
+  pendingSplineControl?: Point;
+}
+
 interface CompiledGeometry {
   paths?: VsdxEditorGeometryPath[];
   hasGeometrySource: boolean;
@@ -2933,6 +2937,7 @@ function compileGeometrySource(source: GeometrySource, targetWidth: number, targ
     let firstPoint: Point | undefined;
     let lastPoint: Point | undefined;
     const commands: string[] = [];
+    const state: GeometryCompileState = {};
 
     for (const row of toArray(section?.Row)) {
       if (String(row?.Del ?? '') === '1') {
@@ -2941,7 +2946,7 @@ function compileGeometrySource(source: GeometrySource, targetWidth: number, targ
       const cells = toArray(row?.Cell);
       const rowType = String(row?.T ?? row?.N ?? '').toLowerCase();
       const beforeLength = commands.length;
-      const result = compileGeometryRow(rowType, cells, context, commands, lastPoint);
+      const result = compileGeometryRow(rowType, cells, context, commands, lastPoint, state);
       rememberGeometryRowRefs(section, row, cells, context);
       if (result?.firstPoint) {
         firstPoint = firstPoint ?? result.firstPoint;
@@ -2975,10 +2980,14 @@ function compileGeometryRow(
   cells: any[],
   context: GeometryContext,
   commands: string[],
-  lastPoint: Point | undefined
+  lastPoint: Point | undefined,
+  state: GeometryCompileState
 ): { firstPoint?: Point; lastPoint?: Point } | undefined {
   const relative = rowType.startsWith('rel');
   const point = readGeometryPoint(cells, context, relative, rowType === 'moveto' || rowType === 'relmoveto' ? { x: 0, y: 0 } : undefined);
+  if (rowType !== 'splineknot' && rowType !== 'splinestart') {
+    state.pendingSplineControl = undefined;
+  }
   if (rowType === 'ellipse') {
     return compileEllipseRow(cells, context, commands);
   }
@@ -2990,6 +2999,26 @@ function compileGeometryRow(
   }
   if (rowType === 'nurbsto') {
     return compileNurbsRow(cells, context, commands, lastPoint, relative);
+  }
+  if (rowType === 'splinestart') {
+    if (point && lastPoint) {
+      state.pendingSplineControl = point;
+    }
+    return lastPoint ? { lastPoint } : point ? { firstPoint: point, lastPoint: point } : undefined;
+  }
+  if (rowType === 'splineknot') {
+    if (!point) {
+      return undefined;
+    }
+    if (!lastPoint) {
+      commands.push(pathCommand('M', point));
+      state.pendingSplineControl = point;
+      return { firstPoint: point, lastPoint: point };
+    }
+    const control = state.pendingSplineControl ?? midpoint(lastPoint, point);
+    commands.push(`Q ${formatPoint(control)} ${formatPoint(point)}`);
+    state.pendingSplineControl = point;
+    return { lastPoint: point };
   }
 
   if (!point) {
@@ -3025,11 +3054,6 @@ function compileGeometryRow(
     commands.push(control1 && control2 ? `C ${formatPoint(control1)} ${formatPoint(control2)} ${formatPoint(point)}` : pathCommand('L', point));
     return { lastPoint: point };
   }
-  if (rowType === 'splinestart' || rowType === 'splineknot') {
-    commands.push(pathCommand(lastPoint ? 'L' : 'M', point));
-    return { firstPoint: lastPoint ? undefined : point, lastPoint: point };
-  }
-
   commands.push(pathCommand('L', point));
   return { lastPoint: point };
 }
@@ -3298,7 +3322,7 @@ function compilePolylineRow(
   lastPoint: Point | undefined,
   relative: boolean
 ): { firstPoint?: Point; lastPoint?: Point } | undefined {
-  const points = readFormulaPointList(cells, 'A', context, relative);
+  const points = readPolylinePointList(cells, context, relative);
   const endpoint = readGeometryPoint(cells, context, relative);
   if (endpoint && !points.some(point => samePoint(point, endpoint))) {
     points.push(endpoint);
@@ -3333,27 +3357,25 @@ function compileNurbsRow(
     return undefined;
   }
 
-  const formulaPoints = readFormulaPointList(cells, 'E', context, relative);
-  const visiblePoints = formulaPoints.length > 1 ? formulaPoints : [point];
-  let firstPoint: Point | undefined;
-  let currentPoint = lastPoint;
-  for (const visiblePoint of visiblePoints) {
-    if (!currentPoint && commands.length === 0) {
-      commands.push(pathCommand('M', visiblePoint));
-      firstPoint = visiblePoint;
-    } else if (!currentPoint) {
-      commands.push(pathCommand('M', visiblePoint));
-      firstPoint = visiblePoint;
-    } else {
-      commands.push(pathCommand('L', visiblePoint));
-    }
-    currentPoint = visiblePoint;
+  const formulaPoints = readNurbsPointList(cells, context, relative);
+  const curvePoints = [
+    ...(lastPoint ? [lastPoint] : []),
+    ...formulaPoints,
+    point
+  ].filter((candidate, index, list) => index === 0 || !samePoint(candidate, list[index - 1]));
+  if (curvePoints.length === 0) {
+    return undefined;
   }
-  if (!currentPoint || !samePoint(currentPoint, point)) {
-    commands.push(pathCommand(currentPoint ? 'L' : 'M', point));
-    currentPoint = point;
+  if (curvePoints.length === 1) {
+    commands.push(pathCommand(lastPoint ? 'L' : 'M', curvePoints[0]));
+    return { firstPoint: lastPoint ? undefined : curvePoints[0], lastPoint: curvePoints[0] };
   }
-  return { firstPoint, lastPoint: currentPoint };
+
+  appendSmoothCurve(commands, curvePoints, lastPoint);
+  return {
+    firstPoint: lastPoint ? undefined : curvePoints[0],
+    lastPoint: curvePoints[curvePoints.length - 1]
+  };
 }
 
 function compileEllipseRow(
@@ -3507,6 +3529,13 @@ function samePoint(a: Point, b: Point): boolean {
   return Math.abs(a.x - b.x) < 0.0001 && Math.abs(a.y - b.y) < 0.0001;
 }
 
+function midpoint(a: Point, b: Point): Point {
+  return {
+    x: (a.x + b.x) / 2,
+    y: (a.y + b.y) / 2
+  };
+}
+
 function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
@@ -3517,6 +3546,43 @@ function pathCommand(command: 'M' | 'L', point: Point): string {
 
 function formatPoint(point: Point): string {
   return `${formatNumber(point.x)} ${formatNumber(point.y)}`;
+}
+
+function appendSmoothCurve(commands: string[], points: Point[], lastPoint: Point | undefined): void {
+  if (points.length === 0) {
+    return;
+  }
+
+  const startIndex = 1;
+  if (!lastPoint) {
+    commands.push(pathCommand('M', points[0]));
+  } else if (!samePoint(lastPoint, points[0])) {
+    commands.push(pathCommand('L', points[0]));
+  }
+
+  for (let index = startIndex; index < points.length; index += 1) {
+    const previous = points[index - 1];
+    const current = points[index];
+    if (samePoint(previous, current)) {
+      continue;
+    }
+    if (points.length < 3) {
+      commands.push(pathCommand('L', current));
+      continue;
+    }
+
+    const beforePrevious = points[Math.max(0, index - 2)];
+    const next = points[Math.min(points.length - 1, index + 1)];
+    const control1 = {
+      x: previous.x + (current.x - beforePrevious.x) / 6,
+      y: previous.y + (current.y - beforePrevious.y) / 6
+    };
+    const control2 = {
+      x: current.x - (next.x - previous.x) / 6,
+      y: current.y - (next.y - previous.y) / 6
+    };
+    commands.push(`C ${formatPoint(control1)} ${formatPoint(control2)} ${formatPoint(current)}`);
+  }
 }
 
 function evaluateFormula(formula: unknown, context: GeometryContext): number | undefined {
@@ -3682,15 +3748,61 @@ function applyFormulaFunction(name: string, args: number[]): number | undefined 
     case 'guard':
     case 'themeguard':
     case 'setatref':
+    case 'setatrefexpr':
       return args[0];
+    case 'if':
+      return args.length === 3 ? (args[0] !== 0 ? args[1] : args[2]) : undefined;
+    case 'not':
+      return args.length === 1 ? (args[0] === 0 ? 1 : 0) : undefined;
+    case 'and':
+      return args.length > 0 ? (args.every(value => value !== 0) ? 1 : 0) : undefined;
+    case 'or':
+      return args.length > 0 ? (args.some(value => value !== 0) ? 1 : 0) : undefined;
     case 'abs':
       return args.length === 1 ? Math.abs(args[0]) : undefined;
+    case 'sqrt':
+      return args.length === 1 && args[0] >= 0 ? Math.sqrt(args[0]) : undefined;
+    case 'sqr':
+      return args.length === 1 && args[0] >= 0 ? Math.sqrt(args[0]) : undefined;
+    case 'sin':
+      return args.length === 1 ? Math.sin(args[0]) : undefined;
+    case 'cos':
+      return args.length === 1 ? Math.cos(args[0]) : undefined;
+    case 'tan':
+      return args.length === 1 ? Math.tan(args[0]) : undefined;
+    case 'atan':
+      return args.length === 1 ? Math.atan(args[0]) : undefined;
+    case 'atan2':
+      return args.length === 2 ? Math.atan2(args[0], args[1]) : undefined;
+    case 'round':
+      return args.length === 1 ? Math.round(args[0]) : undefined;
+    case 'floor':
+      return args.length === 1 ? Math.floor(args[0]) : undefined;
+    case 'ceiling':
+    case 'ceil':
+      return args.length === 1 ? Math.ceil(args[0]) : undefined;
+    case 'int':
+      return args.length === 1 ? Math.trunc(args[0]) : undefined;
     case 'min':
       return args.length > 0 ? Math.min(...args) : undefined;
     case 'max':
       return args.length > 0 ? Math.max(...args) : undefined;
     case 'sum':
       return args.reduce((total, value) => total + value, 0);
+    case 'mod':
+      return args.length === 2 && Math.abs(args[1]) > 0.0000001 ? args[0] % args[1] : undefined;
+    case 'bitxor':
+      return args.length === 2 ? (Math.trunc(args[0]) ^ Math.trunc(args[1])) : undefined;
+    case 'bitand':
+      return args.length === 2 ? (Math.trunc(args[0]) & Math.trunc(args[1])) : undefined;
+    case 'bitor':
+      return args.length === 2 ? (Math.trunc(args[0]) | Math.trunc(args[1])) : undefined;
+    case 'iserror':
+      return args.length === 1 ? 0 : undefined;
+    case 'textheight':
+    case 'textwidth':
+    case 'opentextwin':
+      return args[0] ?? 0;
     case 'pi':
       return args.length === 0 ? Math.PI : undefined;
     default:
@@ -3720,28 +3832,101 @@ function splitFormulaArguments(args: string): string[] {
   return result;
 }
 
-function readFormulaPointList(cells: unknown[], name: string, context: GeometryContext, relative: boolean): Point[] {
+function readFormulaValues(cells: unknown[], name: string, context: GeometryContext): { name: string; values: number[] } | undefined {
   const formula = readCellFormula(cells, name) ?? readCellString(cells, name);
-  const match = formula?.trim().match(/^[A-Z]+\((.*)\)$/i);
+  const match = formula?.trim().match(/^([A-Z]+)\s*\((.*)\)$/i);
   if (!match) {
-    return [];
+    return undefined;
   }
 
-  const values = splitFormulaArguments(match[1])
+  const values = splitFormulaArguments(match[2])
     .map(argument => evaluateFormula(argument, context));
-  if (values.length < 4 || values.length % 2 !== 0 || values.length > 80 || values.some(value => value === undefined)) {
+  if (values.some(value => value === undefined || !Number.isFinite(value))) {
+    return undefined;
+  }
+  return { name: match[1].toLowerCase(), values: values as number[] };
+}
+
+function readPolylinePointList(cells: unknown[], context: GeometryContext, relative: boolean): Point[] {
+  const call = readFormulaValues(cells, 'A', context);
+  if (!call || call.name !== 'polyline' || call.values.length > 160) {
     return [];
   }
 
+  const typed = call.values.length >= 6
+    && (call.values.length - 2) % 2 === 0
+    && isCoordinateType(call.values[0])
+    && isCoordinateType(call.values[1]);
+  return typed
+    ? readTypedPointList(call.values.slice(2), call.values[0], call.values[1], context)
+    : readPointPairs(call.values, context, relative);
+}
+
+function readNurbsPointList(cells: unknown[], context: GeometryContext, relative: boolean): Point[] {
+  const call = readFormulaValues(cells, 'E', context);
+  if (!call || call.name !== 'nurbs' || call.values.length > 200) {
+    return [];
+  }
+
+  const typed = call.values.length >= 8
+    && (call.values.length - 4) % 4 === 0
+    && isCoordinateType(call.values[2])
+    && isCoordinateType(call.values[3]);
+  if (!typed) {
+    return readPointPairs(call.values, context, relative);
+  }
+
+  const result: Point[] = [];
+  for (let index = 4; index + 3 < call.values.length; index += 4) {
+    result.push(toTypedGeometryPoint(call.values[index], call.values[index + 1], call.values[2], call.values[3], context));
+  }
+  return result;
+}
+
+function readTypedPointList(values: number[], xType: number, yType: number, context: GeometryContext): Point[] {
   const points: Point[] = [];
-  for (let index = 0; index < values.length; index += 2) {
-    const x = values[index];
-    const y = values[index + 1];
-    if (Number.isFinite(x) && Number.isFinite(y)) {
-      points.push(toGeometryPoint(x!, y!, context, relative));
-    }
+  if (values.length < 2 || values.length % 2 !== 0) {
+    return points;
+  }
+  for (let index = 0; index + 1 < values.length; index += 2) {
+    points.push(toTypedGeometryPoint(values[index], values[index + 1], xType, yType, context));
   }
   return points;
+}
+
+function readPointPairs(values: number[], context: GeometryContext, relative: boolean): Point[] {
+  const points: Point[] = [];
+  if (values.length < 4 || values.length % 2 !== 0) {
+    return points;
+  }
+  for (let index = 0; index + 1 < values.length; index += 2) {
+    points.push(toGeometryPoint(values[index], values[index + 1], context, relative));
+  }
+  return points;
+}
+
+function isCoordinateType(value: number): boolean {
+  return value === 0 || value === 1;
+}
+
+function toTypedGeometryPoint(x: number, y: number, xType: number, yType: number, context: GeometryContext): Point {
+  const scaledX = xType === 0 ? x * context.targetWidth : x * context.scaleX;
+  const scaledY = yType === 0 ? y * context.targetHeight : y * context.scaleY;
+  return {
+    x: scaledX,
+    y: context.targetHeight - scaledY
+  };
+}
+
+function readFormulaPointList(cells: unknown[], name: string, context: GeometryContext, relative: boolean): Point[] {
+  const call = readFormulaValues(cells, name, context);
+  if (!call) {
+    return [];
+  }
+  if (call.values.length > 80) {
+    return [];
+  }
+  return readPointPairs(call.values, context, relative);
 }
 
 function setCellNumber(cells: any[], name: string, value: number): void {

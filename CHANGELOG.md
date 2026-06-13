@@ -2,6 +2,20 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.2.2 - 2026-06-13
+
+### Fixed
+
+- Expanded semantic VSDX geometry coverage for typed `POLYLINE(...)`, typed `NURBS(...)`, and `SplineStart` / `SplineKnot` rows so more manual Visio-created and AI-authored diagrams stay on the editable SVG preview path.
+- Added broader ShapeSheet formula support for common logical, math, bitwise, and text-measurement placeholder functions used by Visio-generated cells.
+- Added editor regression coverage for the new geometry and formula cases, and updated the rendering coverage matrix with the remaining exact NURBS/spline fidelity limits.
+
+### Validation
+
+- Passed `npm run test:editor`, `npm run lint`, `npm run test:qa`, and `npm run package`.
+- Installed `ai-fde-vsdx-radar-0.2.2.vsix` into the normal VS Code user profile and verified `ai-fde-lab.ai-fde-vsdx-radar@0.2.2`.
+- Passed normal-profile 200% full-screen GUI checks for both `新建 Microsoft Visio Drawing.vsdx` and `ai-render-baseline.vsdx`.
+
 ## 0.2.1 - 2026-06-13
 
 ### Changed

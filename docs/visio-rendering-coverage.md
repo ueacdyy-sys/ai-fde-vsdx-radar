@@ -28,9 +28,9 @@ Microsoft documents Visio Geometry sections as rows that define the vertices for
 | `EllipticalArcTo`, `RelEllipticalArcTo` | Supported through SVG arc generation. | High; endpoint/control/axis/ratio semantics are easy to get subtly wrong. |
 | `QuadBezTo`, `RelQuadBezTo` | Supported as SVG quadratic curves. | Medium. |
 | `CubBezTo`, `RelCubBezTo` | Supported as SVG cubic curves. | Medium. |
-| `PolylineTo`, `RelPolylineTo` | Supported by parsing point formulas into line segments. | High; formulas can encode many vertex formats. |
-| `NURBSTo` | Present in the row registry and approximated by sampled/path behavior where possible. | High; NURBS requires knot/weight/formula fidelity. |
-| `SplineStart`, `SplineKnot` | Currently rendered conservatively as point-to-point path segments. | High; exact spline interpolation is not complete. |
+| `PolylineTo`, `RelPolylineTo` | Supported by parsing direct point formulas and typed `POLYLINE(xType,yType,...)` coordinate lists. | High; formulas can encode many vertex formats. |
+| `NURBSTo` | Supported by parsing direct point formulas and typed `NURBS(knotLast,degree,xType,yType,x,y,knot,weight,...)` records, then approximating the visible curve with smooth SVG cubic segments. | High; exact NURBS knot/weight interpolation parity is still a known gap. |
+| `SplineStart`, `SplineKnot` | Supported as visible curved segments using the stored spline start/control and knot points. | High; exact Visio spline interpolation parity is still a known gap. |
 | `Ellipse` | Supported as ellipse geometry. | Medium. |
 | `InfiniteLine` | Supported as a visible line segment between the stored points. | Medium; true infinite-line behavior is not represented in SVG preview. |
 
@@ -60,6 +60,8 @@ Covered by current code/tests:
 - Hidden `Geometry.NoShow` sections without fallback rectangles.
 - Geometry section `NoFill` / `NoLine` paint flags.
 - Scratch row formula references, including zero-based XML rows mapped to one-based ShapeSheet names.
+- Common ShapeSheet formula functions used by complex masters, including `IF`, `NOT`, logical functions, math/trig/rounding, bit operations, and `SETATREFEXPR`.
+- Typed `POLYLINE` and typed `NURBS` geometry formulas, plus curved `SplineStart` / `SplineKnot` output.
 - Inherited cached paint values.
 - Numeric transparency ratios.
 - Document-unit stroke widths.
@@ -69,7 +71,7 @@ Covered by current code/tests:
 
 Known incomplete or high-risk:
 
-- Exact NURBS and spline interpolation.
+- Exact NURBS knot/weight interpolation and exact Visio spline interpolation.
 - Pixel-level Visio parity for some `EllipticalArcTo` cases, especially shapes like manual `Tagged document`.
 - Full formula engine compatibility for advanced ShapeSheet functions.
 - Gradient fills, advanced pattern fills, and some theme effects.

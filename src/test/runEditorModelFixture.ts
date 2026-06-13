@@ -10,6 +10,9 @@ async function main(): Promise<void> {
   await verifiesCurvedGeometryRows();
   await verifiesEllipticalArcToRowsUseSvgArcSemantics();
   await verifiesAdvancedGeometryRows();
+  await verifiesOfficialPolylineAndNurbsFormulaRows();
+  await verifiesSplineGeometryRows();
+  await verifiesAdvancedFormulaFunctionsInGeometry();
   await verifiesGeometrySectionPaintFlags();
   await verifiesHiddenGeometryDoesNotFallbackToRectangle();
   await verifiesScratchRowsUseOneBasedFormulaNames();
@@ -233,6 +236,94 @@ async function verifiesAdvancedGeometryRows(): Promise<void> {
   assert.ok(geometryPath.includes(' C '), 'expected relative cubic geometry to compile');
   assert.ok(geometryPath.includes(' A '), 'expected ellipse geometry to compile to SVG arcs');
   assert.ok(geometryPath.includes('L 3.5 1.5'), 'expected polyline formula vertices to be rendered');
+}
+
+async function verifiesOfficialPolylineAndNurbsFormulaRows(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Typed Polyline">
+      <Cell N="PinX" V="4"/>
+      <Cell N="PinY" V="4"/>
+      <Cell N="Width" V="4"/>
+      <Cell N="Height" V="2"/>
+      <Section N="Geometry" IX="0">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+        <Row T="PolylineTo" IX="2"><Cell N="X" V="4"/><Cell N="Y" V="0"/><Cell N="A" F="POLYLINE(0,0,0,0,0.5,0.25,1,1)"/></Row>
+      </Section>
+      <Section N="Geometry" IX="1">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="1"/></Row>
+        <Row T="NURBSTo" IX="2">
+          <Cell N="X" V="4"/>
+          <Cell N="Y" V="1"/>
+          <Cell N="E" F="NURBS(1,3,0,0,0.25,0.5,0,1,0.5,0.75,0.5,1,0.75,0.5,1,1)"/>
+        </Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'official-geometry-formulas.vsdx');
+  const geometryPath = diagram.pages[0]?.shapes[0]?.geometryPath ?? '';
+  assert.ok(geometryPath.includes('L 2 1.5'), 'expected POLYLINE xType/yType percent coordinates to be rendered');
+  assert.ok(geometryPath.includes('L 4 0'), 'expected POLYLINE endpoint to be rendered after typed vertices');
+  assert.ok(geometryPath.includes(' C '), 'expected typed NURBS vertices to compile to smooth SVG curve commands');
+  assert.ok(geometryPath.includes('4 1'), 'expected NURBS row endpoint to remain in the rendered path');
+}
+
+async function verifiesSplineGeometryRows(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Spline">
+      <Cell N="PinX" V="4"/>
+      <Cell N="PinY" V="4"/>
+      <Cell N="Width" V="4"/>
+      <Cell N="Height" V="2"/>
+      <Section N="Geometry" IX="0">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+        <Row T="SplineStart" IX="2"><Cell N="X" V="1"/><Cell N="Y" V="1"/><Cell N="A" V="0"/><Cell N="B" V="0"/><Cell N="C" V="1"/><Cell N="D" V="3"/></Row>
+        <Row T="SplineKnot" IX="3"><Cell N="X" V="2"/><Cell N="Y" V="1.5"/><Cell N="A" V="0.5"/></Row>
+        <Row T="SplineKnot" IX="4"><Cell N="X" V="4"/><Cell N="Y" V="0"/><Cell N="A" V="1"/></Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'spline-geometry.vsdx');
+  const geometryPath = diagram.pages[0]?.shapes[0]?.geometryPath ?? '';
+  assert.ok(geometryPath.includes('Q 1 1 2 0.5'), 'expected SplineStart/SplineKnot to render as a curved segment');
+  assert.ok(geometryPath.includes('Q 2 0.5 4 2'), 'expected consecutive SplineKnot rows to continue the spline curve');
+}
+
+async function verifiesAdvancedFormulaFunctionsInGeometry(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Formula Functions">
+      <Cell N="PinX" V="4"/>
+      <Cell N="PinY" V="4"/>
+      <Cell N="Width" V="4"/>
+      <Cell N="Height" V="2"/>
+      <Section N="Geometry" IX="0">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" F="IF(NOT(0),Width,0)"/><Cell N="Y" F="SQRT(1)"/></Row>
+        <Row T="LineTo" IX="3"><Cell N="X" F="BITXOR(1,3)"/><Cell N="Y" F="SETATREFEXPR(0)"/></Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'advanced-formula-functions.vsdx');
+  const geometryPath = diagram.pages[0]?.shapes[0]?.geometryPath ?? '';
+  assert.ok(geometryPath.includes('L 4 1'), 'expected IF/NOT/SQRT formulas to resolve geometry coordinates');
+  assert.ok(geometryPath.includes('L 2 2'), 'expected BITXOR/SETATREFEXPR formulas to resolve geometry coordinates');
 }
 
 async function verifiesGeometrySectionPaintFlags(): Promise<void> {

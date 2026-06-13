@@ -2,7 +2,7 @@
   "name": "ai-fde-vsdx-radar",
   "displayName": "Visio Preview & QA Linter",
   "description": "在 VS Code 中预览、轻量编辑和 QA Microsoft Visio 文件。",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "ai-fde-lab",
   "license": "SEE LICENSE IN LICENSE.txt",
   "author": {
