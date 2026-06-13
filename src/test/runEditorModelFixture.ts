@@ -8,21 +8,30 @@ import { getModernVisioConversionExtension, resolveModernVisioConversionOutputPa
 async function main(): Promise<void> {
   await verifiesMasterShapeGeometry();
   await verifiesCurvedGeometryRows();
+  await verifiesEllipticalArcToRowsUseSvgArcSemantics();
   await verifiesAdvancedGeometryRows();
   await verifiesGeometrySectionPaintFlags();
+  await verifiesHiddenGeometryDoesNotFallbackToRectangle();
+  await verifiesScratchRowsUseOneBasedFormulaNames();
   await verifiesFormulaGeometryAndMasterRowInheritance();
   await verifiesFormulaOnlyShapeTransformCells();
   await verifiesShapeFlipTransformCells();
   await verifiesTextBoxTransformCells();
   await verifiesColorFormulaAndNoPaint();
+  await verifiesInheritedCachedPaintAndRatioTransparency();
   await verifiesPaintTransparencyCells();
+  await verifiesPaintTransparencyPercentFormulaWinsOverCachedValue();
   await verifiesFillPatternBackgroundCells();
   await verifiesShapeLinePatternCells();
   await verifiesShapeRoundingCells();
   await verifiesShadowStyleCells();
   await verifiesTextStyleCells();
+  await verifiesVisioInternalFontSizeUnitDoesNotDoubleConvert();
+  await verifiesNoStyleTextBackgroundDoesNotRenderBlackBlocks();
   await verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle();
   await verifiesMasterChildShapeExpansion();
+  await verifiesMasterExpansionWithPagePlaceholderChildren();
+  await verifiesManualVisioMasterInstancesRenderGeometryWithoutPageText();
   await verifiesMultiRootMasterShapeExpansion();
   await verifiesStencilMasterFallbackPreview();
   await verifiesLegacyVisioBinaryGetsReadOnlyDiagram();
@@ -157,6 +166,38 @@ async function verifiesCurvedGeometryRows(): Promise<void> {
   assert.ok(geometryPath.includes(' Q '), 'expected curved geometry rows to compile to SVG quadratic curves');
 }
 
+async function verifiesEllipticalArcToRowsUseSvgArcSemantics(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="EllipticalArc">
+      <Cell N="PinX" V="2"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Section N="Geometry" IX="0">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0.5"/></Row>
+        <Row T="EllipticalArcTo" IX="2">
+          <Cell N="X" V="2"/>
+          <Cell N="Y" V="0.5"/>
+          <Cell N="A" V="1"/>
+          <Cell N="B" V="1"/>
+          <Cell N="C" V="0"/>
+          <Cell N="D" V="2"/>
+        </Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'elliptical-arc-fixture.vsdx');
+  const geometryPath = diagram.pages[0]?.shapes[0]?.geometryPath ?? '';
+  assert.ok(geometryPath.includes(' A '), 'expected EllipticalArcTo to compile to an SVG elliptical arc command');
+  assert.ok(!geometryPath.includes(' Q '), 'expected EllipticalArcTo not to fall back to quadratic curve approximation');
+}
+
 async function verifiesAdvancedGeometryRows(): Promise<void> {
   const zip = new JSZip();
   addSinglePageMetadata(zip);
@@ -233,6 +274,74 @@ async function verifiesGeometrySectionPaintFlags(): Promise<void> {
   assert.strictEqual(shape.geometryPaths?.[1]?.noFill, undefined, 'expected second geometry section fill to remain visible');
   assert.strictEqual(shape.geometryPaths?.[1]?.noLine, true, 'expected NoLine geometry section metadata');
   assert.ok(!shape.geometryPath?.includes('L 3 1'), 'expected hidden geometry section to be omitted from compatibility path');
+}
+
+async function verifiesHiddenGeometryDoesNotFallbackToRectangle(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Hidden Geometry Body">
+      <Cell N="PinX" V="2"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="FillForegnd" V="#4672c4"/>
+      <Cell N="LineColor" V="#000000"/>
+      <Section N="Geometry" IX="0">
+        <Cell N="NoShow" V="1"/>
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" V="2"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="3"><Cell N="X" V="2"/><Cell N="Y" V="1"/></Row>
+      </Section>
+    </Shape>
+    <Shape ID="2" NameU="Visible Body">
+      <Cell N="PinX" V="5"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Section N="Geometry" IX="0">
+        <Cell N="NoShow" V="0"/>
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" V="2"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="3"><Cell N="X" V="2"/><Cell N="Y" V="1"/></Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'hidden-geometry-no-fallback-fixture.vsdx');
+  assert.ok(!diagram.pages[0]?.shapes.some(shape => shape.id === '1'), 'expected fully hidden geometry not to render as a fallback rectangle');
+  assert.ok(diagram.pages[0]?.shapes.find(shape => shape.id === '2')?.geometryPath, 'expected visible geometry to keep rendering');
+}
+
+async function verifiesScratchRowsUseOneBasedFormulaNames(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Scratch Row Shape">
+      <Cell N="PinX" V="2"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Section N="Scratch">
+        <Row IX="0"><Cell N="X" V="0.2"/></Row>
+        <Row IX="1"><Cell N="X" V="0.8"/></Row>
+      </Section>
+      <Section N="Geometry" IX="0">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0" F="Scratch.X1"/><Cell N="Y" V="0" F="Scratch.X2"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" V="2"/><Cell N="Y" V="1"/></Row>
+      </Section>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'scratch-one-based-fixture.vsdx');
+  const shape = diagram.pages[0]?.shapes[0];
+  assert.ok(shape?.geometryPath?.startsWith('M 0.2 0.2'), 'expected Scratch row IX=0 to resolve as Scratch.X1 and IX=1 as Scratch.X2');
 }
 
 async function verifiesFormulaGeometryAndMasterRowInheritance(): Promise<void> {
@@ -510,6 +619,7 @@ async function verifiesColorFormulaAndNoPaint(): Promise<void> {
       <Cell N="Height" V="1"/>
       <Cell N="FillPattern" V="0"/>
       <Cell N="LinePattern" V="0"/>
+      <Text>No paint text</Text>
     </Shape>
   </Shapes>
 </PageContents>`);
@@ -521,6 +631,49 @@ async function verifiesColorFormulaAndNoPaint(): Promise<void> {
   assert.strictEqual(styled?.line, '#c81020');
   assert.strictEqual(noPaint?.fill, 'none');
   assert.strictEqual(noPaint?.line, 'none');
+}
+
+async function verifiesInheritedCachedPaintAndRatioTransparency(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="InheritedCachedPaint">
+      <Cell N="PinX" V="2"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="FillForegnd" V="#4672c4" F="Inh"/>
+      <Cell N="LineColor" V="#c8c8c8" F="Inh"/>
+      <Cell N="LineWeight" V="0.003472222222222222" F="Inh"/>
+      <Section N="Geometry" IX="0">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" V="2"/><Cell N="Y" V="0"/></Row>
+      </Section>
+    </Shape>
+    <Shape ID="2" NameU="RatioTransparentShape">
+      <Cell N="PinX" V="5"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="FillForegndTrans" V="1"/>
+      <Cell N="LineColorTrans" V="0.4"/>
+      <Text>Opacity anchor</Text>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'inherited-cached-paint-fixture.vsdx');
+  const inherited = diagram.pages[0]?.shapes.find(shape => shape.id === '1');
+  const transparent = diagram.pages[0]?.shapes.find(shape => shape.id === '2');
+  assert.ok(inherited, 'expected inherited cached paint shape to be parsed');
+  assert.strictEqual(inherited.fill, '#4672c4', 'expected cached Inh fill color to override defaults');
+  assert.strictEqual(inherited.line, '#c8c8c8', 'expected cached Inh line color to override defaults');
+  assert.ok(Math.abs((inherited.strokeWidth ?? 0) - 0.003472222222222222) < 0.000001, 'expected cached Inh line weight to stay thin');
+  assert.ok(transparent, 'expected ratio transparency shape to be parsed');
+  assert.strictEqual(transparent.fillOpacity, 0, 'expected numeric transparency 1 to mean 100 percent transparent');
+  assert.ok(Math.abs((transparent.strokeOpacity ?? 0) - 0.6) < 0.0001, 'expected numeric transparency 0.4 to mean 40 percent transparent');
 }
 
 async function verifiesPaintTransparencyCells(): Promise<void> {
@@ -558,6 +711,31 @@ async function verifiesPaintTransparencyCells(): Promise<void> {
   assert.ok(Math.abs((shape.fillOpacity ?? 0) - 0.6) < 0.0001, 'expected fill transparency to become fill opacity');
   assert.ok(Math.abs((shape.strokeOpacity ?? 0) - 0.25) < 0.0001, 'expected line transparency to become stroke opacity');
   assert.ok(Math.abs((connector.strokeOpacity ?? 0) - 0.75) < 0.0001, 'expected formula line transparency to become connector stroke opacity');
+}
+
+async function verifiesPaintTransparencyPercentFormulaWinsOverCachedValue(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Formula Transparency">
+      <Cell N="PinX" V="2"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="FillForegndTrans" V="1" F="GUARD(100%)"/>
+      <Cell N="LineColorTrans" V="1" F="GUARD(100%)"/>
+      <Text>Transparent text anchor</Text>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'percent-transparency-formula-fixture.vsdx');
+  const shape = diagram.pages[0]?.shapes[0];
+  assert.ok(shape, 'expected transparency formula shape');
+  assert.strictEqual(shape.fillOpacity, 0, 'expected percent formula to override stale cached transparency value');
+  assert.strictEqual(shape.strokeOpacity, 0, 'expected line percent formula to override stale cached transparency value');
 }
 
 async function verifiesFillPatternBackgroundCells(): Promise<void> {
@@ -801,6 +979,93 @@ async function verifiesTextStyleCells(): Promise<void> {
   assert.ok(Math.abs((character?.textStyle?.textPosAfterBullet ?? 0) - 0.21) < 0.0001, 'expected paragraph row text position after bullet');
 }
 
+async function verifiesVisioInternalFontSizeUnitDoesNotDoubleConvert(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Real Visio Font Size">
+      <Cell N="PinX" V="2"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="Size" V="0.1944444444444444" U="PT"/>
+      <Text>14pt text</Text>
+    </Shape>
+    <Shape ID="2" NameU="Synthetic Point Font Size">
+      <Cell N="PinX" V="5"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="Size" V="18" U="PT"/>
+      <Text>18pt text</Text>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'font-size-unit-fixture.vsdx');
+  const realVisio = diagram.pages[0]?.shapes.find(shape => shape.id === '1');
+  const synthetic = diagram.pages[0]?.shapes.find(shape => shape.id === '2');
+  assert.ok(Math.abs((realVisio?.textStyle?.fontSize ?? 0) - 0.1944444444444444) < 0.0001, 'expected real Visio PT display-unit cell to remain in internal inches');
+  assert.ok(Math.abs((synthetic?.textStyle?.fontSize ?? 0) - 0.25) < 0.0001, 'expected synthetic point count to convert to inches');
+}
+
+async function verifiesNoStyleTextBackgroundDoesNotRenderBlackBlocks(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/document.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<VisioDocument>
+  <StyleSheets>
+    <StyleSheet ID="0" NameU="No Style">
+      <Cell N="LineColor" V="0"/>
+      <Cell N="FillForegnd" V="1"/>
+      <Cell N="FillPattern" V="1"/>
+      <Cell N="TextBkgnd" V="0"/>
+      <Cell N="TextBkgndTrans" V="0"/>
+      <Cell N="Color" V="0"/>
+    </StyleSheet>
+    <StyleSheet ID="3" NameU="Normal" LineStyle="0" FillStyle="0" TextStyle="0">
+      <Cell N="FillForegnd" V="#deebf7"/>
+      <Cell N="Color" V="#262626"/>
+    </StyleSheet>
+    <StyleSheet ID="4" NameU="Explicit Black Text Background" LineStyle="0" FillStyle="0" TextStyle="0">
+      <Cell N="TextBkgnd" V="0" F="GUARD(0)"/>
+      <Cell N="TextBkgndTrans" V="25"/>
+    </StyleSheet>
+  </StyleSheets>
+</VisioDocument>`);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="DefaultTextBackground" LineStyle="3" FillStyle="3" TextStyle="3">
+      <Cell N="PinX" V="2"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Text>Default style text</Text>
+    </Shape>
+    <Shape ID="2" NameU="ExplicitTextBackground" LineStyle="4" FillStyle="4" TextStyle="4">
+      <Cell N="PinX" V="5"/>
+      <Cell N="PinY" V="2"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Text>Explicit background text</Text>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'text-background-style-fixture.vsdx');
+  const defaultBackground = diagram.pages[0]?.shapes.find(shape => shape.id === '1');
+  const explicitBackground = diagram.pages[0]?.shapes.find(shape => shape.id === '2');
+  assert.ok(defaultBackground, 'expected default text background shape');
+  assert.ok(explicitBackground, 'expected explicit text background shape');
+  assert.strictEqual(defaultBackground.textStyle?.background, undefined, 'expected No Style TextBkgnd=0 to stay transparent');
+  assert.strictEqual(defaultBackground.textStyle?.backgroundOpacity, undefined, 'expected No Style TextBkgndTrans=0 to stay transparent');
+  assert.strictEqual(explicitBackground.textStyle?.background, '#000000', 'expected explicit guarded black text background to be preserved');
+  assert.ok(Math.abs((explicitBackground.textStyle?.backgroundOpacity ?? 0) - 0.75) < 0.0001, 'expected explicit text background transparency to become opacity');
+}
+
 async function verifiesStyleSheetInheritanceForShapePaintAndConnectorStyle(): Promise<void> {
   const zip = new JSZip();
   addSinglePageMetadata(zip);
@@ -1042,6 +1307,165 @@ async function verifiesMasterChildShapeExpansion(): Promise<void> {
   assert.ok(Math.abs((child.y ?? 0) - 4.75) < 0.0001, 'expected child y to be scaled into page coordinates');
   assert.ok(Math.abs((child.width ?? 0) - 1) < 0.0001, 'expected child width to be scaled');
   assert.ok(Math.abs((child.height ?? 0) - 0.5) < 0.0001, 'expected child height to be scaled');
+}
+
+async function verifiesMasterExpansionWithPagePlaceholderChildren(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/masters/masters.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<Masters xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <Master ID="2" NameU="Tagged document"><Rel r:id="rId1"/></Master>
+</Masters>`);
+  zip.file('visio/masters/_rels/masters.xml.rels', `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.microsoft.com/visio/2010/relationships/master" Target="master1.xml"/>
+</Relationships>`);
+  zip.file('visio/masters/master1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<MasterContents>
+  <Shapes>
+    <Shape ID="4" Type="Group">
+      <Cell N="PinX" V="1"/>
+      <Cell N="PinY" V="0.5"/>
+      <Cell N="Width" V="2"/>
+      <Cell N="Height" V="1"/>
+      <Cell N="LocPinX" V="1"/>
+      <Cell N="LocPinY" V="0.5"/>
+      <Shapes>
+        <Shape ID="11" NameU="MasterVisibleBody">
+          <Cell N="PinX" V="1"/>
+          <Cell N="PinY" V="0.5"/>
+          <Cell N="Width" V="2"/>
+          <Cell N="Height" V="1"/>
+          <Cell N="FillForegnd" V="#ddeeff"/>
+          <Cell N="LineColor" V="#223344"/>
+          <Section N="Geometry" IX="0">
+            <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+            <Row T="LineTo" IX="2"><Cell N="X" V="2"/><Cell N="Y" V="0"/></Row>
+            <Row T="LineTo" IX="3"><Cell N="X" V="2"/><Cell N="Y" V="1"/></Row>
+            <Row T="LineTo" IX="4"><Cell N="X" V="0"/><Cell N="Y" V="1"/></Row>
+            <Row T="LineTo" IX="5"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+          </Section>
+        </Shape>
+      </Shapes>
+    </Shape>
+  </Shapes>
+</MasterContents>`);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="1" NameU="Tagged document" Master="2" Type="Group">
+      <Cell N="PinX" V="5"/>
+      <Cell N="PinY" V="5"/>
+      <Shapes>
+        <Shape ID="2" Type="Shape">
+          <Cell N="LineColor" V="#c8c8c8" F="Inh"/>
+        </Shape>
+        <Shape ID="3" Type="Group">
+          <Shapes>
+            <Shape ID="4" Type="Shape"/>
+          </Shapes>
+        </Shape>
+      </Shapes>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'manual-master-placeholder-fixture.vsdx');
+  const ids = new Set(diagram.pages[0]?.shapes.map(shape => shape.id));
+  assert.ok(ids.has('1/master/11'), 'expected master child geometry to render even when page instance has placeholder children');
+  assert.ok(!ids.has('1/2'), 'expected empty page placeholder child to be suppressed');
+  assert.ok(!ids.has('1/3'), 'expected empty page placeholder group to be suppressed');
+  assert.ok(!ids.has('1/3/4'), 'expected nested empty page placeholder child to be suppressed');
+  const masterBody = diagram.pages[0]?.shapes.find(shape => shape.id === '1/master/11');
+  assert.ok(masterBody?.geometryPath, 'expected inherited master body geometry');
+  assert.strictEqual(masterBody.fill, '#ddeeff');
+  assert.strictEqual(masterBody.line, '#223344');
+  assert.strictEqual(masterBody.editable, false);
+  assert.ok(Math.abs((masterBody.x ?? 0) - 4) < 0.0001, 'expected master body x to inherit instance size from master cells');
+  assert.ok(Math.abs((masterBody.y ?? 0) - 4.5) < 0.0001, 'expected master body y to inherit instance size from master cells');
+  assert.ok(Math.abs((masterBody.width ?? 0) - 2) < 0.0001, 'expected master body width to inherit instance size from master cells');
+  assert.ok(Math.abs((masterBody.height ?? 0) - 1) < 0.0001, 'expected master body height to inherit instance size from master cells');
+}
+
+async function verifiesManualVisioMasterInstancesRenderGeometryWithoutPageText(): Promise<void> {
+  const zip = new JSZip();
+  addSinglePageMetadata(zip);
+  zip.file('visio/masters/masters.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<Masters xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <Master ID="4" Name="终结符" NameU="Terminator"><Rel r:id="rId1"/></Master>
+  <Master ID="5" Name="手动操作" NameU="Manual operation"><Rel r:id="rId2"/></Master>
+</Masters>`);
+  zip.file('visio/masters/_rels/masters.xml.rels', `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.microsoft.com/visio/2010/relationships/master" Target="master1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.microsoft.com/visio/2010/relationships/master" Target="master2.xml"/>
+</Relationships>`);
+  zip.file('visio/masters/master1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<MasterContents>
+  <Shapes>
+    <Shape ID="4" Type="Shape">
+      <Cell N="Width" V="0.9842519685"/>
+      <Cell N="Height" V="0.5905511811"/>
+      <Cell N="LineColor" V="#c8c8c8"/>
+      <Cell N="FillForegnd" V="#ffffff"/>
+      <Section N="Geometry">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0.2952755905"/></Row>
+        <Row T="ArcTo" IX="2"><Cell N="X" V="0.4921259842"/><Cell N="Y" V="0.5905511811"/><Cell N="A" V="0.2"/></Row>
+        <Row T="ArcTo" IX="3"><Cell N="X" V="0.9842519685"/><Cell N="Y" V="0.2952755905"/><Cell N="A" V="0.2"/></Row>
+        <Row T="ArcTo" IX="4"><Cell N="X" V="0.4921259842"/><Cell N="Y" V="0"/><Cell N="A" V="0.2"/></Row>
+        <Row T="ArcTo" IX="5"><Cell N="X" V="0"/><Cell N="Y" V="0.2952755905"/><Cell N="A" V="0.2"/></Row>
+      </Section>
+      <Text><cp IX="0"/></Text>
+    </Shape>
+  </Shapes>
+</MasterContents>`);
+  zip.file('visio/masters/master2.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<MasterContents>
+  <Shapes>
+    <Shape ID="5" Type="Shape">
+      <Cell N="Width" V="0.9842519685"/>
+      <Cell N="Height" V="0.3937007874"/>
+      <Cell N="LineColor" V="#c8c8c8"/>
+      <Cell N="FillForegnd" V="#ffffff"/>
+      <Section N="Geometry">
+        <Row T="MoveTo" IX="1"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="2"><Cell N="X" V="0.9842519685"/><Cell N="Y" V="0"/></Row>
+        <Row T="LineTo" IX="3"><Cell N="X" V="0.9842519685"/><Cell N="Y" V="0.3937007874"/></Row>
+        <Row T="LineTo" IX="4"><Cell N="X" V="0"/><Cell N="Y" V="0.3937007874"/></Row>
+        <Row T="LineTo" IX="5"><Cell N="X" V="0"/><Cell N="Y" V="0"/></Row>
+      </Section>
+      <Text><cp IX="0"/></Text>
+    </Shape>
+  </Shapes>
+</MasterContents>`);
+  zip.file('visio/pages/page1.xml', `<?xml version="1.0" encoding="UTF-8"?>
+<PageContents>
+  <Shapes>
+    <Shape ID="7" Name="终结符" NameU="Terminator" Master="4" Type="Shape">
+      <Cell N="PinX" V="3.5433072316"/>
+      <Cell N="PinY" V="2.1653544112"/>
+      <Section N="Character"><Row IX="0"><Cell N="Color" V="#feffff" F="Inh"/></Row></Section>
+    </Shape>
+    <Shape ID="8" Name="手动操作" NameU="Manual operation" Master="5" Type="Shape">
+      <Cell N="PinX" V="2.2637796403"/>
+      <Cell N="PinY" V="3.9370080351"/>
+      <Section N="Character"><Row IX="0"><Cell N="Color" V="#feffff" F="Inh"/></Row></Section>
+    </Shape>
+  </Shapes>
+</PageContents>`);
+
+  const diagram = await readVsdxDiagram(await zip.generateAsync({ type: 'nodebuffer' }), 'manual-visio-master-instance-fixture.vsdx');
+  const page = diagram.pages[0];
+  assert.ok(page, 'expected manual Visio-like page');
+  assert.strictEqual(page.shapes.length, 2, 'expected both master-backed page instances to render');
+  for (const shape of page.shapes) {
+    assert.strictEqual(shape.kind, 'shape');
+    assert.strictEqual(shape.editable, true, 'expected top-level master-backed shape to remain lightweight editable');
+    assert.ok(shape.geometryPath && shape.geometryPath.length > 0, 'expected master geometry to render without page Text');
+    assert.strictEqual(shape.text, '', 'expected formatting-only master text markers not to invent visible text');
+    assert.ok((shape.width ?? 0) > 0.3, 'expected width inherited from master');
+    assert.ok((shape.height ?? 0) > 0.2, 'expected height inherited from master');
+  }
 }
 
 async function verifiesMultiRootMasterShapeExpansion(): Promise<void> {

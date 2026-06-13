@@ -121,7 +121,7 @@ function New-MarketplacePreview {
             '  "shapeCount": 17,',
             '  "connectCount": 12,',
             '  "risks": [',
-            '    "PREVIEW_STALE"',
+            '    "DANGLING_CONNECTORS"',
             '  ]',
             '}'
         )

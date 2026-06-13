@@ -224,17 +224,19 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       display: flex;
       flex-wrap: nowrap;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       padding: 6px 10px;
       border-bottom: 1px solid var(--border);
       background: var(--surface-alt);
       box-sizing: border-box;
       min-width: 0;
-      overflow: visible;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-gutter: stable;
     }
     .toolbar select {
-      min-width: 86px;
-      max-width: 260px;
+      min-width: 74px;
+      max-width: 220px;
       height: 28px;
       background: var(--vscode-dropdown-background, var(--surface));
       color: var(--text);
@@ -249,8 +251,8 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       display: flex;
       flex-wrap: nowrap;
       align-items: center;
-      gap: 8px;
-      flex: 0 1 auto;
+      gap: 6px;
+      flex: 0 0 auto;
       min-width: 0;
     }
     .status-pill {
@@ -276,8 +278,38 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .status-card {
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0;
+      background: var(--surface);
+    }
+    .status-card summary {
+      cursor: pointer;
+      padding: 8px 10px;
+      font-weight: 600;
+      list-style-position: inside;
+    }
+    .status-card-body {
+      display: grid;
+      gap: 8px;
+      padding: 0 10px 10px;
+    }
+    .status-section {
+      display: grid;
+      gap: 4px;
+      padding-top: 2px;
+    }
+    .status-section strong {
+      color: var(--text);
+      font-size: 12px;
+    }
+    .status-card code {
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
     #languageSelect {
-      flex: 0 1 150px;
+      flex: 0 0 128px;
     }
     #settingsButton,
     #togglePanel,
@@ -325,8 +357,11 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
     }
     .status-badge[data-badge="M"],
     .status-badge[data-badge="Q"],
-    .status-badge[data-badge="R"],
     .status-badge[data-badge="S"] {
+      background: var(--vscode-badge-background, #4d4d4d);
+      color: var(--vscode-badge-foreground, #ffffff);
+    }
+    .status-badge[data-badge="R"] {
       background: var(--vscode-editorWarning-foreground, #d29922);
       color: #111111;
     }
@@ -426,16 +461,16 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       fill: context-stroke;
       stroke: none;
     }
-    .shape-outline {
-      vector-effect: non-scaling-stroke;
-    }
     .shape-shadow {
       pointer-events: none;
     }
-    .selected .shape-outline,
-    .selected.connector-node {
+    .selection-outline {
+      fill: none;
       stroke: var(--accent);
-      stroke-width: 0.035;
+      stroke-width: 0.015;
+      stroke-dasharray: 0.06 0.04;
+      pointer-events: none;
+      vector-effect: non-scaling-stroke;
     }
     .handle {
       fill: var(--accent);
@@ -503,20 +538,14 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       overflow-wrap: anywhere;
     }
     .status-card {
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 10px;
       margin: 0 0 12px;
       background: color-mix(in srgb, var(--surface) 80%, transparent);
     }
-    .status-card strong {
-      display: block;
-      margin-bottom: 6px;
+    .status-card summary {
       color: var(--text);
     }
     .status-card code {
       display: block;
-      margin-top: 6px;
       color: var(--muted);
       font-family: var(--vscode-editor-font-family, Consolas, monospace);
       font-size: 11px;
@@ -580,6 +609,7 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const svgNS = 'http://www.w3.org/2000/svg';
+    const editorStateVersion = 4;
     let diagram = null;
     let pageIndex = 0;
     let zoom = 1;
@@ -592,6 +622,9 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
     let panelCollapsed = false;
     let inspectorMode = 'selection';
     let resizingPanel = false;
+    let pendingInitialContentScroll = false;
+    let pendingRestoreScroll = null;
+    let suppressScrollRemember = false;
 
     const pageSelect = document.getElementById('pageSelect');
     const zoomReadout = document.getElementById('zoomReadout');
@@ -629,6 +662,9 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         panelHint: '拖拽画布和侧栏之间的细分隔条即可调整宽度。分隔条只在工作区内，不会遮挡顶部按钮。',
         statusTitle: '文件状态',
         statusUnknown: '未读取状态',
+        qaResult: 'QA 结果',
+        cacheState: '缓存状态',
+        artifactPaths: '产物路径',
         statusM: '缺少预览缓存',
         statusS: '预览缓存已过期',
         statusQ: 'QA 报告缺失或过期',
@@ -636,8 +672,15 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         statusR: 'QA 有风险提示',
         statusOK: '预览和 QA 当前可用',
         statusCounts: (errors, warnings) => '错误 ' + errors + '，警告 ' + warnings,
-        statusNoteM: 'M 表示缺少预览缓存，不等于 VSDX 内容格式错误。运行导出预览或 QA 后状态会更新。',
-        statusNoteGeneric: '这里显示的是插件的预览/QA 状态，不是 VS Code 内置格式校验。只有 E 才表示 QA 错误；M 只是缺少预览缓存。',
+        statusNoteM: 'M 只表示缺少预览缓存，不等于文件格式错误。',
+        statusNoteS: 'S 表示缓存过期，需要重新导出预览。',
+        statusNoteQ: 'Q 表示 QA 报告缺失或过期，需要重新运行 QA。',
+        statusNoteE: 'E 表示 QA 报告里有内容错误。',
+        statusNoteR: 'R 表示 QA 报告里有风险提示。',
+        statusNoteOK: 'OK 表示预览缓存和 QA 报告都可用。',
+        statusNoteGeneric: '这里显示插件缓存和 QA 状态，不是 VS Code 内置格式校验。',
+        noContentRisk: '当前没有内容 QA 错误或风险。',
+        cacheOnlyState: '这是缓存/报告状态，不作为内容风险统计。',
         previewPath: '预览',
         qaPath: 'QA',
         summaryPath: '摘要',
@@ -671,6 +714,9 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         panelHint: 'Drag the narrow divider between the canvas and inspector to resize. The divider stays inside the work area and does not cover toolbar buttons.',
         statusTitle: 'File status',
         statusUnknown: 'Status not loaded',
+        qaResult: 'QA result',
+        cacheState: 'Cache state',
+        artifactPaths: 'Artifact paths',
         statusM: 'Missing preview cache',
         statusS: 'Preview cache is stale',
         statusQ: 'QA report missing or stale',
@@ -678,8 +724,15 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         statusR: 'QA has warnings',
         statusOK: 'Preview and QA are current',
         statusCounts: (errors, warnings) => 'Errors ' + errors + ', warnings ' + warnings,
-        statusNoteM: 'M means the preview cache is missing. It does not necessarily mean the VSDX file format is invalid.',
-        statusNoteGeneric: 'This status comes from the extension preview/QA artifacts, not VS Code built-in file-format validation. Only E means QA errors; M only means the preview cache is missing.',
+        statusNoteM: 'M only means the preview cache is missing; it is not a file-format error.',
+        statusNoteS: 'S means the preview cache is stale and should be exported again.',
+        statusNoteQ: 'Q means the QA report is missing or stale and should be rerun.',
+        statusNoteE: 'E means the QA report contains content errors.',
+        statusNoteR: 'R means the QA report contains risk warnings.',
+        statusNoteOK: 'OK means preview cache and QA report are current.',
+        statusNoteGeneric: 'This is extension cache and QA state, not VS Code built-in file-format validation.',
+        noContentRisk: 'No content QA errors or risk warnings are currently reported.',
+        cacheOnlyState: 'This is a cache/report state and is not counted as content risk.',
         previewPath: 'Preview',
         qaPath: 'QA',
         summaryPath: 'Summary',
@@ -698,17 +751,24 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         currentStatus = event.data.status || null;
         dirty = false;
         const saved = vscode.getState() || {};
-        pageIndex = Math.min(saved.pageIndex || 0, Math.max(0, (diagram.pages || []).length - 1));
-        zoom = saved.zoom || 1;
-        selectedId = saved.selectedId || '';
+        const restoreDocumentState = saved.stateVersion === editorStateVersion
+          && saved.sourceName === diagram.sourceName;
+        pageIndex = restoreDocumentState
+          ? Math.min(saved.pageIndex || 0, Math.max(0, (diagram.pages || []).length - 1))
+          : 0;
+        zoom = restoreDocumentState ? saved.zoom || 1 : 1;
+        selectedId = restoreDocumentState ? saved.selectedId || '' : '';
+        pendingRestoreScroll = null;
+        pendingInitialContentScroll = false;
         language = saved.language || language;
         panelWidth = clampPanelWidth(saved.panelWidth || panelWidth);
-        panelCollapsed = Boolean(saved.panelCollapsed);
-        inspectorMode = saved.inspectorMode || 'selection';
+        panelCollapsed = restoreDocumentState ? Boolean(saved.panelCollapsed) : true;
+        inspectorMode = restoreDocumentState ? saved.inspectorMode || 'selection' : 'selection';
         languageSelect.value = language;
         applyPanelLayout();
         applyLanguage();
         render();
+        fitPage();
       }
       if (event.data.command === 'saved') {
         currentStatus = event.data.status || currentStatus;
@@ -722,6 +782,12 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
     document.getElementById('zoomIn').addEventListener('click', () => setZoom(zoom * 1.2));
     document.getElementById('zoomOne').addEventListener('click', () => setZoom(1));
     document.getElementById('zoomFit').addEventListener('click', fitPage);
+    canvasWrap.addEventListener('scroll', () => {
+      if (suppressScrollRemember) {
+        return;
+      }
+      rememberState();
+    }, { passive: true });
     document.getElementById('saveFile').addEventListener('click', () => vscode.postMessage({ command: 'save' }));
     document.getElementById('convertLegacy').addEventListener('click', () => vscode.postMessage({ command: 'convertLegacy' }));
     document.getElementById('revealSource').addEventListener('click', () => vscode.postMessage({ command: 'revealSource' }));
@@ -889,6 +955,10 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
 
       pageStage.append(svg);
       zoomReadout.textContent = Math.round(zoom * 100) + '%';
+      if (pendingInitialContentScroll) {
+        pendingInitialContentScroll = false;
+        requestAnimationFrame(() => scrollToPageContent(page));
+      }
     }
 
     function svgDefinitions(page) {
@@ -989,15 +1059,15 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
           path.setAttribute('d', item.path);
           path.setAttribute('transform', 'translate(' + x + ' ' + y + ')');
           path.setAttribute('fill', item.noFill || shape.imageDataUri ? 'none' : shapeFill(shape));
-          path.setAttribute('stroke', item.noLine ? 'none' : safeColor(shape.line, '#586069'));
-          path.setAttribute('stroke-width', String(Math.max(0.012, numberOr(shape.strokeWidth, 0.02))));
+          path.setAttribute('stroke', item.noLine ? 'none' : previewStrokeColor(shape));
+          path.setAttribute('stroke-width', String(documentStrokeWidth(shape, 0.02)));
           path.setAttribute('stroke-linecap', lineCap(shape));
           path.setAttribute('stroke-linejoin', 'round');
           applyPaintOpacity(path, shape);
           applyLinePattern(path, shape);
           group.append(path);
         });
-      } else {
+      } else if (shape.suppressDefaultGeometry !== true) {
         const rect = document.createElementNS(svgNS, 'rect');
         rect.classList.add('shape-outline');
         rect.setAttribute('x', String(x));
@@ -1006,50 +1076,18 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         rect.setAttribute('height', String(height));
         rect.setAttribute('rx', String(shapeCornerRadius(shape, width, height)));
         rect.setAttribute('fill', shape.imageDataUri ? 'none' : shapeFill(shape));
-        rect.setAttribute('stroke', safeColor(shape.line, '#586069'));
-        rect.setAttribute('stroke-width', String(Math.max(0.012, numberOr(shape.strokeWidth, 0.02))));
+        rect.setAttribute('stroke', previewStrokeColor(shape));
+        rect.setAttribute('stroke-width', String(documentStrokeWidth(shape, 0.02)));
         rect.setAttribute('stroke-linecap', lineCap(shape));
         applyPaintOpacity(rect, shape);
         applyLinePattern(rect, shape);
         group.append(rect);
       }
 
-      if (shape.text) {
-        const textBox = resolveTextBox(page, shape, x, y, width, height);
-        const contentBox = resolveTextContentBox(shape, textBox);
-        const textBackground = renderTextBackground(shape, textBox);
-        if (textBackground) {
-          group.append(textBackground);
-        }
-        const text = document.createElementNS(svgNS, 'text');
-        text.classList.add('shape-label');
-        if (Math.abs(textBox.angle) > 0.0001) {
-          const degrees = -textBox.angle * 180 / Math.PI;
-          text.setAttribute('transform', 'rotate(' + degrees + ' ' + (textBox.x + textBox.width / 2) + ' ' + (textBox.y + textBox.height / 2) + ')');
-        }
-        text.style.fill = safeColor(shape.textStyle && shape.textStyle.color, '#111827');
-        applyTextStyle(text, shape);
-        const fontSize = textFontSize(shape, contentBox);
-        text.setAttribute('font-size', String(fontSize));
-        const lines = String(shape.text).replace(/\\r/g, '').split('\\n').filter(line => line.length > 0);
-        const lineHeight = textLineHeight(shape, fontSize, contentBox, lines.length);
-        const paragraphSpacing = textParagraphSpacing(shape);
-        const textPosition = resolveTextPosition(shape, contentBox, lines.length, lineHeight, paragraphSpacing);
-        text.setAttribute('x', String(textPosition.x));
-        text.setAttribute('y', String(round4(textPosition.y + paragraphSpacing.before)));
-        text.setAttribute('text-anchor', textPosition.anchor);
-        text.setAttribute('dominant-baseline', textPosition.baseline);
-        lines.slice(0, 5).forEach((line, index) => {
-          const tspan = document.createElementNS(svgNS, 'tspan');
-          tspan.setAttribute('x', String(textLineX(shape, textPosition, index)));
-          tspan.setAttribute('dy', index === 0 ? '0' : String(round4(lineHeight + paragraphSpacing.after)));
-          tspan.textContent = line;
-          text.append(tspan);
-        });
-        group.append(text);
-      }
+      renderShapeText(group, page, shape, x, y, width, height);
 
-      if (shape.editable && Math.abs(angle) < 0.0001 && !shape.flipX && !shape.flipY) {
+      if (shape.id === selectedId && shape.editable && Math.abs(angle) < 0.0001 && !shape.flipX && !shape.flipY) {
+        group.append(selectionOutline(x, y, width, height));
         const handle = document.createElementNS(svgNS, 'rect');
         handle.classList.add('handle', 'shape-resize-handle');
         handle.setAttribute('x', String(x + width - 0.06));
@@ -1076,6 +1114,18 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         editText(shape);
       });
       return group;
+    }
+
+    function selectionOutline(x, y, width, height) {
+      const outline = document.createElementNS(svgNS, 'rect');
+      outline.classList.add('selection-outline');
+      const padding = 0.05;
+      outline.setAttribute('x', String(x - padding));
+      outline.setAttribute('y', String(y - padding));
+      outline.setAttribute('width', String(width + padding * 2));
+      outline.setAttribute('height', String(height + padding * 2));
+      outline.setAttribute('rx', '0.03');
+      return outline;
     }
 
     function renderShapeShadow(shape, x, y, width, height) {
@@ -1272,6 +1322,44 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       };
     }
 
+    function renderShapeText(group, page, shape, x, y, width, height) {
+      if (!shape.text) {
+        return;
+      }
+      const textBox = resolveTextBox(page, shape, x, y, width, height);
+      const contentBox = resolveTextContentBox(shape, textBox);
+      const textBackground = renderTextBackground(shape, textBox);
+      if (textBackground) {
+        group.append(textBackground);
+      }
+      const text = document.createElementNS(svgNS, 'text');
+      text.classList.add('shape-label');
+      if (Math.abs(textBox.angle) > 0.0001) {
+        const degrees = -textBox.angle * 180 / Math.PI;
+        text.setAttribute('transform', 'rotate(' + degrees + ' ' + (textBox.x + textBox.width / 2) + ' ' + (textBox.y + textBox.height / 2) + ')');
+      }
+      text.style.fill = safeColor(shape.textStyle && shape.textStyle.color, '#111827');
+      applyTextStyle(text, shape);
+      const fontSize = textFontSize(shape, contentBox);
+      text.setAttribute('font-size', String(fontSize));
+      const lines = String(shape.text).replace(/\\r/g, '').split('\\n').filter(line => line.length > 0);
+      const lineHeight = textLineHeight(shape, fontSize, contentBox, lines.length);
+      const paragraphSpacing = textParagraphSpacing(shape);
+      const textPosition = resolveTextPosition(shape, contentBox, lines.length, lineHeight, paragraphSpacing);
+      text.setAttribute('x', String(textPosition.x));
+      text.setAttribute('y', String(round4(textPosition.y + paragraphSpacing.before)));
+      text.setAttribute('text-anchor', textPosition.anchor);
+      text.setAttribute('dominant-baseline', textPosition.baseline);
+      lines.slice(0, 5).forEach((line, index) => {
+        const tspan = document.createElementNS(svgNS, 'tspan');
+        tspan.setAttribute('x', String(textLineX(shape, textPosition, index)));
+        tspan.setAttribute('dy', index === 0 ? '0' : String(round4(lineHeight + paragraphSpacing.after)));
+        tspan.textContent = line;
+        text.append(tspan);
+      });
+      group.append(text);
+    }
+
     function resolveTextContentBox(shape, textBox) {
       const style = shape.textStyle || {};
       const margins = style.margins || {};
@@ -1449,10 +1537,9 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
           path.setAttribute('transform', 'translate(' + x + ' ' + y + ')');
           path.setAttribute('fill', 'none');
           path.setAttribute('stroke', safeColor(shape.line, '#3b82f6'));
-          path.setAttribute('stroke-width', String(Math.max(0.018, numberOr(shape.strokeWidth, 0.025))));
+          path.setAttribute('stroke-width', String(documentStrokeWidth(shape, 0.025)));
           path.setAttribute('stroke-linecap', lineCap(shape));
           path.setAttribute('stroke-linejoin', 'round');
-          path.setAttribute('vector-effect', 'non-scaling-stroke');
           applyPaintOpacity(path, shape);
           applyConnectorStyle(path, shape);
           group.append(path);
@@ -1465,18 +1552,19 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         line.setAttribute('x2', String(x2));
         line.setAttribute('y2', String(y2));
         line.setAttribute('stroke', safeColor(shape.line, '#3b82f6'));
-        line.setAttribute('stroke-width', String(Math.max(0.018, numberOr(shape.strokeWidth, 0.025))));
+        line.setAttribute('stroke-width', String(documentStrokeWidth(shape, 0.025)));
         line.setAttribute('stroke-linecap', lineCap(shape));
-        line.setAttribute('vector-effect', 'non-scaling-stroke');
         applyPaintOpacity(line, shape);
         applyConnectorStyle(line, shape);
         group.append(line);
         connectorBody = line;
       }
-      if (shape.editable) {
+      if (shape.id === selectedId && shape.editable) {
         group.append(connectorHandle(page, shape, 'begin', x1, y1));
         group.append(connectorHandle(page, shape, 'end', x2, y2));
       }
+      const labelBounds = connectorLabelBounds(page, shape, x1, y1, x2, y2);
+      renderShapeText(group, page, shape, labelBounds.x, labelBounds.y, labelBounds.width, labelBounds.height);
       group.addEventListener('pointerdown', event => {
         selectShape(shape.id);
         if (shape.editable && event.target === connectorBody) {
@@ -1486,11 +1574,37 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       return group;
     }
 
+    function connectorLabelBounds(page, shape, x1, y1, x2, y2) {
+      if (shape.x !== undefined && shape.y !== undefined && shape.width !== undefined && shape.height !== undefined) {
+        return {
+          x: numberOr(shape.x, 0),
+          y: page.height - numberOr(shape.y, 0) - Math.max(0.08, numberOr(shape.height, 0.18)),
+          width: Math.max(0.18, numberOr(shape.width, 0.6)),
+          height: Math.max(0.08, numberOr(shape.height, 0.18))
+        };
+      }
+      const minX = Math.min(x1, x2);
+      const maxX = Math.max(x1, x2);
+      const minY = Math.min(y1, y2);
+      const maxY = Math.max(y1, y2);
+      return {
+        x: minX,
+        y: minY - 0.12,
+        width: Math.max(0.45, maxX - minX),
+        height: Math.max(0.18, maxY - minY + 0.18)
+      };
+    }
+
     function applyPaintOpacity(node, shape) {
       const fillOpacity = clamp(numberOr(shape.fillOpacity, 1), 0, 1);
       const strokeOpacity = clamp(numberOr(shape.strokeOpacity, 1), 0, 1);
       node.setAttribute('fill-opacity', String(fillOpacity));
       node.setAttribute('stroke-opacity', String(strokeOpacity));
+    }
+
+    function documentStrokeWidth(shape, fallback) {
+      const value = numberOr(shape.strokeWidth, fallback);
+      return Math.max(0.003, value);
     }
 
     function lineCap(shape) {
@@ -1670,41 +1784,37 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
     }
 
     function statusCard() {
-      const card = document.createElement('div');
+      const card = document.createElement('details');
       card.className = 'status-card';
-      const title = document.createElement('strong');
+      card.open = currentStatus?.badge === 'E' || currentStatus?.badge === 'R';
+      const title = document.createElement('summary');
       title.textContent = t('statusTitle') + ': ' + statusLabel(currentStatus);
-      const counts = document.createElement('div');
-      counts.textContent = currentStatus
-        ? t('statusCounts')(currentStatus.errors || 0, currentStatus.warnings || 0)
-        : t('statusUnknown');
-      card.append(title, counts);
-      if (currentStatus?.badge === 'M') {
-        const note = document.createElement('div');
-        note.className = 'status';
-        note.textContent = t('statusNoteM');
-        card.append(note);
-      } else {
-        const note = document.createElement('div');
-        note.className = 'status';
-        note.textContent = t('statusNoteGeneric');
-        card.append(note);
-      }
+      const body = document.createElement('div');
+      body.className = 'status-card-body';
+      body.append(
+        statusSection(t('qaResult'), [
+          currentStatus
+            ? t('statusCounts')(currentStatus.errors || 0, currentStatus.warnings || 0)
+            : t('statusUnknown'),
+          statusIsContentRisk(currentStatus) ? statusNote(currentStatus) : t('noContentRisk')
+        ]),
+        statusSection(t('cacheState'), [
+          statusNote(currentStatus),
+          statusIsContentRisk(currentStatus) ? t('statusNoteGeneric') : t('cacheOnlyState')
+        ])
+      );
       if (currentStatus?.tooltip) {
-        const tooltip = document.createElement('div');
-        tooltip.className = 'status';
-        tooltip.textContent = currentStatus.tooltip;
-        card.append(tooltip);
+        body.append(statusSection(t('statusTitle'), [currentStatus.tooltip]));
       }
+      const pathLines = [];
       if (currentStatus?.previewPath) {
-        const preview = document.createElement('code');
-        preview.textContent = t('previewPath') + ': ' + currentStatus.previewPath;
-        card.append(preview);
+        pathLines.push(t('previewPath') + ': ' + currentStatus.previewPath);
       }
       if (currentStatus?.qaPath) {
-        const qa = document.createElement('code');
-        qa.textContent = t('qaPath') + ': ' + currentStatus.qaPath;
-        card.append(qa);
+        pathLines.push(t('qaPath') + ': ' + currentStatus.qaPath);
+      }
+      if (pathLines.length > 0) {
+        body.append(statusSection(t('artifactPaths'), pathLines, true));
       }
       if (isLegacyConvertRequired()) {
         const hint = document.createElement('div');
@@ -1715,9 +1825,54 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         action.className = 'primary';
         action.textContent = t('convertLegacyAction');
         action.addEventListener('click', () => vscode.postMessage({ command: 'convertLegacy' }));
-        card.append(hint, action);
+        body.append(hint, action);
       }
+      card.append(title, body);
       return card;
+    }
+
+    function statusSection(titleText, lines, code) {
+      const section = document.createElement('div');
+      section.className = 'status-section';
+      const title = document.createElement('strong');
+      title.textContent = titleText;
+      section.append(title);
+      lines.filter(Boolean).forEach(line => {
+        const item = document.createElement(code ? 'code' : 'div');
+        item.className = code ? '' : 'status';
+        item.textContent = line;
+        section.append(item);
+      });
+      return section;
+    }
+
+    function statusIsContentRisk(status) {
+      return status?.badge === 'E' || status?.badge === 'R';
+    }
+
+    function statusNote(status) {
+      if (!status) {
+        return t('statusUnknown');
+      }
+      if (status.badge === 'M') {
+        return t('statusNoteM');
+      }
+      if (status.badge === 'S') {
+        return t('statusNoteS');
+      }
+      if (status.badge === 'Q') {
+        return t('statusNoteQ');
+      }
+      if (status.badge === 'E') {
+        return t('statusNoteE');
+      }
+      if (status.badge === 'R') {
+        return t('statusNoteR');
+      }
+      if (status.badge === 'OK') {
+        return t('statusNoteOK');
+      }
+      return t('statusNoteGeneric');
     }
 
     function textField(shape) {
@@ -1822,6 +1977,11 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
 
     function selectShape(id) {
       selectedId = id;
+      inspectorMode = 'selection';
+      if (panelCollapsed) {
+        panelCollapsed = false;
+        applyPanelLayout();
+      }
       rememberState();
       renderInspector();
     }
@@ -1845,13 +2005,180 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
       const page = currentPage();
       const availableW = Math.max(120, canvasWrap.clientWidth - 70);
       const availableH = Math.max(120, canvasWrap.clientHeight - 70);
-      zoom = clamp(Math.min(availableW / (page.width * 96), availableH / (page.height * 96)), 0.15, 4);
+      const bounds = pageContentBounds(page);
+      const fitWidth = bounds ? Math.max(0.25, bounds.maxX - bounds.minX) : page.width;
+      const fitHeight = bounds ? Math.max(0.25, bounds.maxY - bounds.minY) : page.height;
+      zoom = clamp(Math.min(availableW / (fitWidth * 96), availableH / (fitHeight * 96)), 0.15, 4);
       renderCanvas();
-      rememberState();
+      if (bounds) {
+        requestAnimationFrame(() => scrollToPageContent(page));
+      } else {
+        rememberState();
+      }
+    }
+
+    function scrollToPageContent(page) {
+      const bounds = pageFocusBounds(page);
+      if (!bounds) {
+        return false;
+      }
+
+      const paddingLeft = 28;
+      const paddingTop = 28;
+      const unit = 96 * zoom;
+      const centerX = (bounds.minX + bounds.maxX) / 2;
+      const centerY = (bounds.minY + bounds.maxY) / 2;
+      const targetLeft = Math.max(0, paddingLeft + centerX * unit - canvasWrap.clientWidth / 2);
+      const targetTop = Math.max(0, paddingTop + centerY * unit - canvasWrap.clientHeight / 2);
+      setCanvasScroll(targetLeft, targetTop);
+      return true;
+    }
+
+    function restoreOrRevealContent(page) {
+      if (pendingRestoreScroll) {
+        setCanvasScroll(pendingRestoreScroll.left, pendingRestoreScroll.top);
+        pendingRestoreScroll = null;
+      }
+      requestAnimationFrame(() => {
+        if (!viewportIntersectsPageContent(page)) {
+          scrollToPageContent(page);
+        } else {
+          rememberState();
+        }
+      });
+    }
+
+    function setCanvasScroll(left, top) {
+      suppressScrollRemember = true;
+      canvasWrap.scrollTo({ left: Math.max(0, left), top: Math.max(0, top) });
+      requestAnimationFrame(() => {
+        suppressScrollRemember = false;
+        rememberState();
+      });
+    }
+
+    function viewportIntersectsPageContent(page) {
+      const bounds = pageFocusBounds(page);
+      if (!bounds) {
+        return false;
+      }
+      const paddingLeft = 28;
+      const paddingTop = 28;
+      const unit = 96 * zoom;
+      const viewport = {
+        minX: Math.max(0, (canvasWrap.scrollLeft - paddingLeft) / unit),
+        minY: Math.max(0, (canvasWrap.scrollTop - paddingTop) / unit),
+        maxX: Math.min(page.width, (canvasWrap.scrollLeft + canvasWrap.clientWidth - paddingLeft) / unit),
+        maxY: Math.min(page.height, (canvasWrap.scrollTop + canvasWrap.clientHeight - paddingTop) / unit)
+      };
+      return rectanglesIntersect(viewport, bounds);
+    }
+
+    function pageFocusBounds(page) {
+      return pageContentBounds(page, shape => shape.editable)
+        || pageContentBounds(page);
+    }
+
+    function pageContentBounds(page, predicate) {
+      let bounds = null;
+      for (const shape of page.shapes || []) {
+        if (predicate && !predicate(shape)) {
+          continue;
+        }
+        const shapeBounds = shapePageBounds(page, shape);
+        if (!shapeBounds) {
+          continue;
+        }
+        bounds = mergeBounds(bounds, shapeBounds);
+      }
+      return bounds;
+    }
+
+    function shapePageBounds(page, shape) {
+      if (shape.kind === 'connector') {
+        const points = [];
+        if (shape.beginX !== undefined && shape.beginY !== undefined) {
+          points.push({ x: numberOr(shape.beginX, 0), y: page.height - numberOr(shape.beginY, 0) });
+        }
+        if (shape.endX !== undefined && shape.endY !== undefined) {
+          points.push({ x: numberOr(shape.endX, 0), y: page.height - numberOr(shape.endY, 0) });
+        }
+        if (shape.x !== undefined && shape.y !== undefined && shape.width !== undefined && shape.height !== undefined) {
+          points.push(
+            { x: numberOr(shape.x, 0), y: page.height - numberOr(shape.y, 0) - numberOr(shape.height, 0) },
+            { x: numberOr(shape.x, 0) + numberOr(shape.width, 0), y: page.height - numberOr(shape.y, 0) }
+          );
+        }
+        if (points.length === 0) {
+          return null;
+        }
+        const xs = points.map(point => point.x);
+        const ys = points.map(point => point.y);
+        return padBounds({
+          minX: Math.min(...xs),
+          minY: Math.min(...ys),
+          maxX: Math.max(...xs),
+          maxY: Math.max(...ys)
+        }, 0.18, page);
+      }
+
+      if (shape.x === undefined || shape.y === undefined || shape.width === undefined || shape.height === undefined) {
+        return null;
+      }
+      const x = numberOr(shape.x, 0);
+      const y = page.height - numberOr(shape.y, 0) - numberOr(shape.height, 0);
+      return padBounds({
+        minX: x,
+        minY: y,
+        maxX: x + Math.max(0, numberOr(shape.width, 0)),
+        maxY: y + Math.max(0, numberOr(shape.height, 0))
+      }, 0.18, page);
+    }
+
+    function mergeBounds(left, right) {
+      if (!left) {
+        return right;
+      }
+      return {
+        minX: Math.min(left.minX, right.minX),
+        minY: Math.min(left.minY, right.minY),
+        maxX: Math.max(left.maxX, right.maxX),
+        maxY: Math.max(left.maxY, right.maxY)
+      };
+    }
+
+    function padBounds(bounds, padding, page) {
+      return {
+        minX: clamp(bounds.minX - padding, 0, page.width),
+        minY: clamp(bounds.minY - padding, 0, page.height),
+        maxX: clamp(bounds.maxX + padding, 0, page.width),
+        maxY: clamp(bounds.maxY + padding, 0, page.height)
+      };
+    }
+
+    function rectanglesIntersect(left, right) {
+      return left.minX <= right.maxX
+        && left.maxX >= right.minX
+        && left.minY <= right.maxY
+        && left.maxY >= right.minY;
     }
 
     function rememberState() {
-      vscode.setState({ pageIndex, zoom, selectedId, language, panelWidth, panelCollapsed, inspectorMode });
+      vscode.setState({
+        stateVersion: editorStateVersion,
+        sourceName: diagram?.sourceName || '',
+        pageIndex,
+        zoom,
+        selectedId,
+        language,
+        panelWidth,
+        panelCollapsed,
+        inspectorMode,
+        scroll: {
+          left: canvasWrap.scrollLeft,
+          top: canvasWrap.scrollTop
+        }
+      });
     }
 
     function applyPanelLayout() {
@@ -1990,6 +2317,41 @@ export class VsdxInteractiveEditorProvider implements vscode.CustomEditorProvide
         return 'none';
       }
       return /^#[0-9a-fA-F]{3,8}$/.test(value) ? value : fallback;
+    }
+
+    function previewStrokeColor(shape) {
+      const line = safeColor(shape.line, '#586069');
+      if (line === 'none') {
+        return 'none';
+      }
+      const fill = safeColor(shape.fill, '#ffffff');
+      if (!shape.text && isLightColor(fill) && isLightColor(line)) {
+        return '#4b5563';
+      }
+      return line;
+    }
+
+    function isLightColor(value) {
+      const rgb = parseHexColor(value);
+      if (!rgb) {
+        return false;
+      }
+      return (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) > 188;
+    }
+
+    function parseHexColor(value) {
+      if (typeof value !== 'string' || !/^#[0-9a-fA-F]{3,8}$/.test(value)) {
+        return null;
+      }
+      const hex = value.slice(1);
+      const normalized = hex.length === 3
+        ? hex.split('').map(part => part + part).join('')
+        : hex.slice(0, 6);
+      return {
+        r: parseInt(normalized.slice(0, 2), 16),
+        g: parseInt(normalized.slice(2, 4), 16),
+        b: parseInt(normalized.slice(4, 6), 16)
+      };
     }
 
     function colorKey(value) {

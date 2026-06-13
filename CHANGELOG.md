@@ -2,6 +2,53 @@
 
 All notable changes to AI-FDE VSDX Radar are documented in this file.
 
+## 0.2.1 - 2026-06-13
+
+### Changed
+
+- Promoted the extension to the `0.2.x` line after the VSDX semantic preview moved beyond the initial `0.1.x` patch train.
+- Added repository versioning guidance so future releases use minor versions for meaningful renderer/editor capability growth and patch versions for narrow fixes.
+
+### Fixed
+
+- Improved manual Visio-created VSDX rendering for inherited cached paint, ratio transparency, hidden geometry sections, Scratch row formula references, elliptical arcs, and true Visio line weights.
+- Kept selection highlighting separate from original Visio shape strokes so selected shapes no longer mutate the document stroke preview.
+- Improved default-open recovery for restored `.vsdx` text/binary tabs, Visio lock/temp file handling, and QA/cache status separation.
+- Added static lint checks and editor/QA regression fixtures for the new VSDX rendering and lock-file behavior.
+
+### Validation
+
+- Passed `npm run lint`, `npm run test:editor`, `npm run test:qa`, and `npm run package`.
+- Packaged `ai-fde-vsdx-radar-0.2.1.vsix`; GUI release acceptance still requires installing `0.2.1` and rerunning the normal-profile 200% full-screen checks.
+
+## 0.1.50 - 2026-06-12
+
+### Fixed
+
+- Start the extension earlier when a workspace contains Visio files and poll briefly during startup so restored `.vsdx` text/binary tabs are reopened with the interactive editor without waiting for a manual click.
+
+## 0.1.49 - 2026-06-12
+
+### Fixed
+
+- Fixed the interactive editor toolbar at 200% Windows scaling by keeping controls on a single scrollable toolbar row instead of letting buttons overflow under the window edge.
+
+## 0.1.48 - 2026-06-12
+
+### Fixed
+
+- Recover Visio files that VS Code restores as text/binary tabs by reopening them with the interactive preview editor from the tab layer on startup and tab changes.
+- Hide Visio `~$$*.~vsdx` lock files by default, ignore them in scans, and show an ignored lock-file page if one is opened directly instead of displaying binary noise.
+- Scroll the interactive editor's first view to the actual page content bounds so drawings placed lower on the page are visible immediately.
+- Keep missing/stale preview cache states out of content QA risks and update docs/assets to describe them as preview status only.
+
+## 0.1.47 - 2026-06-12
+
+### Fixed
+
+- Recover visible Visio files that VS Code restores as text editors by reopening them with the interactive preview editor on startup.
+
+
 ## 0.1.46 - 2026-06-12
 
 ### Added

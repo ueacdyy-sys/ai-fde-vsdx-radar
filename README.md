@@ -23,7 +23,7 @@ Visio Preview & QA Linter brings modern Microsoft Visio package review into VS C
 - Parses modern Visio package XML and Visio XML drawings, then writes `.aifde/qa/*.qa.json` plus `.qa.md` summaries.
 - Recognizes legacy binary and opaque Visio files (`.vsd`, `.vss`, `.vst`, `.vdw`, `.vwi`, `.vsw`) and adds an explicit conversion command so they can become modern package files (`.vsdx`, `.vssx`, `.vstx`) before entering semantic QA and lightweight editing.
 - Includes all recognized Visio extensions in workspace reports and the risk dashboard; legacy files are marked as `LEGACY_CONVERSION_REQUIRED` and expose a conversion action instead of failing silently.
-- Flags common delivery risks: missing or stale previews, empty pages, duplicate Shape IDs, unlabeled shapes, low connector ratio, diagonal connectors, connectors crossing nodes, dangling connectors, overlapping shapes, page coverage issues, and out-of-bounds shapes.
+- Flags common delivery risks: empty pages, duplicate Shape IDs, unlabeled shapes, low connector ratio, diagonal connectors, connectors crossing nodes, dangling connectors, overlapping shapes, page coverage issues, and out-of-bounds shapes. Missing or stale previews are shown as preview status, not content QA risks.
 - Adds Explorer context menu commands for preview, QA, status, and artifact reveal actions.
 - Generates workspace reports, risk reports, due-risk reports, team review boards, calendar exports, and a webview dashboard for filtering and assigning diagram risks.
 - Supports QA profile templates, import/export, config diff, profile stacks, and profile audit history.

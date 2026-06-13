@@ -12,6 +12,7 @@ export {
   isLegacyVisioPath,
   isModernVisioPath,
   isSemanticVisioPath,
+  isVisioLockFilePath,
   isVisioPath,
   legacyXmlVisioFileGlob,
   modernVisioFileGlob,

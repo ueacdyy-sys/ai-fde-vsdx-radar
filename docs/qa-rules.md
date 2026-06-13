@@ -1,6 +1,6 @@
 # AI-FDE VSDX Radar QA Rules
 
-本文档解释 AI-FDE VSDX Radar 当前版本的 QA 规则、触发条件、相关配置和常见处理方式。QA 结果来自 `.vsdx` 包内 `visio/pages/page*.xml`、`visio/pages/pages.xml`、页面关系文件，以及 `.aifde/cache-index.json` 中记录的预览缓存信息。嵌套 group 子形状会递归展开，并将局部坐标转换到页面坐标后参与 QA。预览缓存失效时，QA JSON 会通过 `previewFreshnessReasons` 记录具体诊断原因。
+本文档解释 AI-FDE VSDX Radar 当前版本的 QA 规则、触发条件、相关配置和常见处理方式。QA 结果来自 `.vsdx` 包内 `visio/pages/page*.xml`、`visio/pages/pages.xml` 和页面关系文件。嵌套 group 子形状会递归展开，并将局部坐标转换到页面坐标后参与 QA。预览缓存失效不会作为内容 QA 风险；QA JSON 只会通过 `previewFreshnessReasons` 记录具体诊断原因，供状态栏、报告和 Dashboard 展示。
 
 ## 严重级别
 
@@ -26,8 +26,6 @@
 
 | 规则码 | 级别 | 触发条件 | 相关配置 |
 | ------ | ---- | -------- | -------- |
-| `PREVIEW_MISSING` | Error | 未记录预览路径，或记录的任一预览文件不存在 | `previewFormat`、`outputDirectory` |
-| `PREVIEW_STALE` | Warning | 预览文件存在，但缓存记录中的 mtime、size、SHA-256 hash、PNG/PDF 完整性或常见 PNG 像素非空证据不足以证明它匹配当前源文件；具体原因写入 `previewFreshnessReasons` | `outputDirectory` |
 | `VSDX_PARSE_FAILED` | Error | 读取 `.vsdx` zip 或解析页面 XML 时抛出异常 | 无 |
 | `NO_PAGES` | Error | 未找到任何 `visio/pages/page*.xml` 页面条目 | 无 |
 | `PAGE_EMPTY` | Error | 单个页面没有任何形状 | 无 |
@@ -47,22 +45,17 @@
 | `PAGE_COVERAGE_LOW` | Warning | 非连接线形状覆盖页面比例低于阈值 | `pageCoverageLowWarningThreshold`、`enablePageCoverageWarning`、`qaPreset` |
 | `PAGE_COVERAGE_HIGH` | Warning | 非连接线形状覆盖页面比例高于阈值 | `pageCoverageHighWarningThreshold`、`enablePageCoverageWarning`、`qaPreset` |
 
-## 缓存与解析规则
+## 预览缓存状态
 
-### `PREVIEW_MISSING`
+预览缓存状态不是内容 QA 风险，不会写入 `risks`，也不会把文件标成需要修内容的 `E/R`。它只用于说明当前是否已有可复查的预览证据。
 
-- 级别：`Error`
-- 判断方式：QA 运行时没有可用预览路径，或缓存记录中的任一预览文件已不存在。
-- 常见原因：未执行预览导出、`.aifde/previews` 被清理、多页 PNG 中缺失 `page-2/page-3` 等后续页面。
-- 处理建议：对该 `.vsdx` 执行 `AI-FDE: Export Preview and QA`，重新生成预览和 QA 证据。
-
-### `PREVIEW_STALE`
-
-- 级别：`Warning`
-- 判断方式：预览文件存在，但缓存记录无法证明它是当前源文件对应的预览。插件会同时校验源文件 mtime、size、SHA-256 hash、预览文件 mtime/size、全部记录到的多页预览路径、PNG 签名/`IHDR` 宽高或 PDF 文件头；常见非交错 8-bit PNG 还会解压 `IDAT` 并检查是否存在非白/非透明像素。
+- 状态 `M`：未记录预览路径，或记录的任一预览文件不存在。
+- 状态 `S`：预览文件存在，但缓存记录无法证明它是当前源文件对应的预览。插件会校验源文件 mtime、size、SHA-256 hash、预览文件 mtime/size、全部记录到的多页预览路径、PNG 签名/`IHDR` 宽高或 PDF 文件头；常见非交错 8-bit PNG 还会解压 `IDAT` 并检查是否存在非白/非透明像素。
 - 诊断证据：QA JSON 的 `previewFreshnessReasons` 会列出具体失效原因，例如 `source hash changed`、`preview file missing`、`PNG file is too small` 或 `blank PNG image data`；Markdown 摘要、状态 tooltip、`Show VSDX Status` 输出、工作区报告的 `Status detail`、Dashboard 的 `Status detail` 列和 Dashboard/工作区报告里的 `Preview Freshness Summary` 也会输出同一组原因，Dashboard 还可按聚合后的原因筛选明细。
-- 常见原因：源 `.vsdx` 修改后没有重新导出，旧缓存记录缺少 `sourceHash`，预览 PNG/PDF 文件损坏，预览 PNG 可解析但内容全白或透明，或 `.aifde/cache-index.json` 与预览文件不一致。
-- 处理建议：重新执行导出；如果是批量交付，建议随后生成工作区风险报告确认没有剩余 `S` 或 `Q` 状态。
+- 常见原因：未执行预览导出、`.aifde/previews` 被清理、多页 PNG 中缺失 `page-2/page-3` 等后续页面。
+- 处理建议：重新执行导出；如果是批量交付，建议随后生成工作区报告确认预览状态。
+
+## 缓存与解析规则
 
 ### `VSDX_PARSE_FAILED`
 

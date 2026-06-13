@@ -2,7 +2,7 @@
   "name": "ai-fde-vsdx-radar",
   "displayName": "Visio Preview & QA Linter",
   "description": "在 VS Code 中预览、轻量编辑和 QA Microsoft Visio 文件。",
-  "version": "0.1.46",
+  "version": "0.2.1",
   "publisher": "ai-fde-lab",
   "license": "SEE LICENSE IN LICENSE.txt",
   "author": {
@@ -61,6 +61,22 @@
     }
   },
   "activationEvents": [
+    "workspaceContains:**/*.vsdx",
+    "workspaceContains:**/*.vsdm",
+    "workspaceContains:**/*.vssx",
+    "workspaceContains:**/*.vssm",
+    "workspaceContains:**/*.vstx",
+    "workspaceContains:**/*.vstm",
+    "workspaceContains:**/*.vdx",
+    "workspaceContains:**/*.vsx",
+    "workspaceContains:**/*.vtx",
+    "workspaceContains:**/*.vsd",
+    "workspaceContains:**/*.vss",
+    "workspaceContains:**/*.vst",
+    "workspaceContains:**/*.vdw",
+    "workspaceContains:**/*.vwi",
+    "workspaceContains:**/*.vsw",
+    "onStartupFinished",
     "onCustomEditor:aiFdeVsdxRadar.interactiveEditor",
     "onCommand:aiFdeVsdxRadar.openInteractiveEditor",
     "onCommand:aiFdeVsdxRadar.convertToModernVisio",
@@ -99,6 +115,7 @@
     "bundle": "node ./scripts/esbuild.mjs",
     "acceptance": "pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/acceptance-check.ps1",
     "compile": "tsc -p ./",
+    "lint": "tsc -p ./ --noEmit && node ./scripts/lint-static.mjs",
     "demo:pack": "pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/generate-demo-pack.ps1",
     "demo:pack:check": "pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/check-demo-pack.ps1",
     "demo:pack:check:strict": "pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File ./scripts/check-demo-pack.ps1 -RequireCurrentAcceptance",
@@ -112,7 +129,7 @@
     "test:qa": "npm run compile && node ./dist/test/runQaFixture.js",
     "test:editor": "npm run compile && node ./dist/test/runEditorModelFixture.js",
     "test:qa:visio": "npm run compile && node ./dist/test/runVisioQaSmoke.js",
-    "verify": "npm run test:qa && npm run smoke:visio && npm run smoke:visio:multipage && npm run test:qa:visio",
+    "verify": "npm run lint && npm run test:qa && npm run smoke:visio && npm run smoke:visio:multipage && npm run test:qa:visio",
     "watch": "tsc -watch -p ./",
     "vscode:prepublish": "npm run compile && npm run bundle -- --production"
   },
@@ -129,6 +146,14 @@
   },
   "contributes": {
     "configurationDefaults": {
+      "files.exclude": {
+        "**/~$$*.~vsdx": true,
+        "**/~$$*.~vsdm": true,
+        "**/~$$*.~vssx": true,
+        "**/~$$*.~vssm": true,
+        "**/~$$*.~vstx": true,
+        "**/~$$*.~vstm": true
+      },
       "workbench.editorAssociations": {
         "*.vsdx": "aiFdeVsdxRadar.interactiveEditor",
         "*.vsdm": "aiFdeVsdxRadar.interactiveEditor",

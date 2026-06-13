@@ -58,6 +58,7 @@ async function main(): Promise<void> {
   const invalidConnectsMultipageCorpusPreviewPath = path.join(root, '.aifde', 'previews', 'invalid-connects-multipage-corpus.test.png');
   const legacyXmlPath = path.join(root, '.aifde', 'fixtures', 'legacy-xml-corpus.vdx');
   const legacyXmlPreviewPath = path.join(root, '.aifde', 'previews', 'legacy-xml-corpus.test.png');
+  const lockFilePath = path.join(fixtureDir, '~$$manual.~vsdx');
   await fs.mkdir(fixtureDir, { recursive: true });
   await fs.mkdir(path.dirname(previewPath), { recursive: true });
   await fs.mkdir(path.dirname(legacyXmlPath), { recursive: true });
@@ -99,6 +100,7 @@ async function main(): Promise<void> {
   await writeDuplicateConnectorIdSamePageCorpusVsdx(duplicateConnectorIdSamePageCorpusPath);
   await writeInvalidConnectsMultipageCorpusVsdx(invalidConnectsMultipageCorpusPath);
   await writeLegacyXmlCorpus(legacyXmlPath);
+  await fs.writeFile(lockFilePath, Buffer.from([0, 1, 2, 3]));
 
   const cacheIndex: CacheIndex = {
     version: 1,
@@ -139,6 +141,10 @@ async function main(): Promise<void> {
   };
 
   const result = await analyzeVsdx(fixturePath, previewPath, cacheIndex, config);
+  const lockFileResult = await analyzeVsdx(lockFilePath, undefined, { version: 1, records: {} }, config);
+  assert(lockFileResult.stats.pageCount === 0, 'expected Visio lock/temp files to skip page analysis');
+  assert(lockFileResult.risks.length === 0, 'expected Visio lock/temp files not to create content QA risks');
+  assert(lockFileResult.previewFreshnessReasons?.includes('visio lock/temp file ignored') === true, 'expected lock/temp files to be explicitly marked ignored');
   assert(result.stats.pageCount === 2, 'expected two pages');
   assert(result.stats.shapeCount === 8, 'expected eight shapes');
   assert(result.stats.textShapeCount === 4, 'expected four text shapes');
@@ -263,8 +269,7 @@ async function main(): Promise<void> {
   const staleHashBusinessCorpusResult = await analyzeVsdx(businessCorpusPath, businessCorpusPreviewPath, staleHashCacheIndex, config);
   assert(!staleHashBusinessCorpusResult.previewFresh, 'expected source hash mismatch to mark preview stale');
   assert(staleHashBusinessCorpusResult.previewFreshnessReasons?.some(reason => reason.includes('source hash changed')) === true, 'expected source hash mismatch to record freshness reason');
-  assert(staleHashBusinessCorpusResult.risks.some(risk => risk.code === 'PREVIEW_STALE'), 'expected source hash mismatch to surface preview stale warning');
-  assert(staleHashBusinessCorpusResult.risks.some(risk => risk.code === 'PREVIEW_STALE' && risk.message.includes('source hash changed')), 'expected source hash mismatch reason in stale risk message');
+  assert(!staleHashBusinessCorpusResult.risks.some(risk => risk.code === 'PREVIEW_STALE'), 'expected preview stale status to stay out of content QA risks');
   const staleHashSummary = toQaSummaryMarkdown(staleHashBusinessCorpusResult);
   assert(staleHashSummary.includes('## Preview Freshness'), 'expected QA summary to include preview freshness section');
   assert(staleHashSummary.includes('source hash changed'), 'expected QA summary to include preview freshness reason');
@@ -274,14 +279,14 @@ async function main(): Promise<void> {
   assert(invalidPreviewBusinessCorpusResult.previewExists, 'expected invalid preview path to exist');
   assert(!invalidPreviewBusinessCorpusResult.previewFresh, 'expected invalid PNG preview to mark preview stale');
   assert(invalidPreviewBusinessCorpusResult.previewFreshnessReasons?.some(reason => reason.includes('PNG file is too small')) === true, 'expected invalid PNG reason to be recorded');
-  assert(invalidPreviewBusinessCorpusResult.risks.some(risk => risk.code === 'PREVIEW_STALE'), 'expected invalid PNG preview to surface preview stale warning');
+  assert(!invalidPreviewBusinessCorpusResult.risks.some(risk => risk.code === 'PREVIEW_STALE'), 'expected invalid PNG preview status to stay out of content QA risks');
 
   const blankPreviewCacheIndex = await createSinglePreviewCacheIndex(businessCorpusPath, blankPreviewIntegrityPath);
   const blankPreviewBusinessCorpusResult = await analyzeVsdx(businessCorpusPath, blankPreviewIntegrityPath, blankPreviewCacheIndex, config);
   assert(blankPreviewBusinessCorpusResult.previewExists, 'expected blank preview path to exist');
   assert(!blankPreviewBusinessCorpusResult.previewFresh, 'expected blank PNG preview to mark preview stale');
   assert(blankPreviewBusinessCorpusResult.previewFreshnessReasons?.some(reason => reason.includes('blank PNG image data')) === true, 'expected blank PNG reason to be recorded');
-  assert(blankPreviewBusinessCorpusResult.risks.some(risk => risk.code === 'PREVIEW_STALE'), 'expected blank PNG preview to surface preview stale warning');
+  assert(!blankPreviewBusinessCorpusResult.risks.some(risk => risk.code === 'PREVIEW_STALE'), 'expected blank PNG preview status to stay out of content QA risks');
   assertPreviewFreshnessSummaryHelpers();
 
   const localGeometryCorpusResult = await analyzeVsdx(localGeometryCorpusPath, localGeometryCorpusPreviewPath, await createSinglePreviewCacheIndex(localGeometryCorpusPath, localGeometryCorpusPreviewPath), config);

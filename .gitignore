@@ -4,3 +4,6 @@ dist-bundle/
 .vscode-test/
 *.vsix
 .aifde/
+.validation/
+~$$*.~vsd*
+test/fixtures/~$$*.~vsd*

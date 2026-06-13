@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import { XMLParser } from 'fast-xml-parser';
 import { getPreviewFreshness as getCachedPreviewFreshness } from '../cache/cacheIndex';
 import { readVsdxDiagramFromFile, type VsdxEditorShape } from '../editor/vsdxModel';
-import { getVisioFormatSupport } from '../visioFormats';
+import { getVisioFormatSupport, isVisioLockFilePath } from '../visioFormats';
 import { CacheIndex, QaPageStat, QaResult, QaRisk, RadarConfig } from '../types';
 
 const xmlParser = new XMLParser({
@@ -22,6 +22,22 @@ export async function analyzeVsdx(
 ): Promise<QaResult> {
   const risks: QaRisk[] = [];
   const sourceEvidence = await readSourceEvidence(sourcePath);
+  if (isVisioLockFilePath(sourcePath)) {
+    return {
+      schemaVersion: 1,
+      sourcePath,
+      ...sourceEvidence,
+      generatedAt: new Date().toISOString(),
+      previewPath,
+      previewPaths: [],
+      previewExists: false,
+      previewFresh: false,
+      previewFreshnessReasons: ['visio lock/temp file ignored'],
+      stats: emptyQaStats(),
+      pages: [],
+      risks: []
+    };
+  }
   const cacheRecord = cacheIndex.records[sourcePath];
   const previewPaths = cacheRecord?.previewPaths?.length
     ? cacheRecord.previewPaths
@@ -35,23 +51,6 @@ export async function analyzeVsdx(
     : { fresh: false, reasons: [] };
   const previewFresh = previewFreshness.fresh;
   const previewFreshnessReasons = previewFreshness.reasons;
-
-  if (!previewExists) {
-    risks.push({
-      severity: 'error',
-      code: 'PREVIEW_MISSING',
-      message: 'Preview file is missing.'
-    });
-  } else if (!previewFresh) {
-    const reasonText = previewFreshnessReasons.length > 0
-      ? ` Reasons: ${previewFreshnessReasons.join('; ')}.`
-      : '';
-    risks.push({
-      severity: 'warning',
-      code: 'PREVIEW_STALE',
-      message: `Preview exists but does not match the cache record for the current source file.${reasonText}`
-    });
-  }
 
   let pages: QaPageStat[] = [];
   try {
@@ -338,6 +337,27 @@ async function readPageStats(
   }
 
   return pages;
+}
+
+function emptyQaStats(): QaResult['stats'] {
+  return {
+    pageCount: 0,
+    shapeCount: 0,
+    textShapeCount: 0,
+    unlabeledShapeCount: 0,
+    oneDShapeCount: 0,
+    connectCount: 0,
+    duplicateShapeIdCount: 0,
+    outOfBoundsShapeCount: 0,
+    diagonalConnectorCount: 0,
+    connectorCrossingCount: 0,
+    danglingConnectorCount: 0,
+    straightConnectorCount: 0,
+    orthogonalConnectorCount: 0,
+    complexConnectorCount: 0,
+    shapeOverlapPairCount: 0,
+    averagePageCoverageRatio: undefined
+  };
 }
 
 async function readLegacyXmlPageStats(

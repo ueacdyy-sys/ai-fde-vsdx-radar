@@ -2,7 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import JSZip from 'jszip';
 import { XMLBuilder, XMLParser } from 'fast-xml-parser';
-import { getVisioFormatSupport, type VisioFormatSupport } from '../visioFormats';
+import { getVisioFormatSupport, isVisioLockFilePath, type VisioFormatSupport } from '../visioFormats';
 
 const xmlParser = new XMLParser({
   ignoreAttributes: false,
@@ -70,6 +70,7 @@ export interface VsdxEditorShape {
   imageDataUri?: string;
   geometryPath?: string;
   geometryPaths?: VsdxEditorGeometryPath[];
+  suppressDefaultGeometry?: boolean;
   textBox?: VsdxEditorTextBox;
   textStyle?: VsdxEditorTextStyle;
   beginArrow?: number;
@@ -177,6 +178,11 @@ interface GeometryContext {
   refs: Map<string, number>;
 }
 
+interface CompiledGeometry {
+  paths?: VsdxEditorGeometryPath[];
+  hasGeometrySource: boolean;
+}
+
 interface FormulaToken {
   type: 'number' | 'identifier' | 'operator' | 'paren' | 'comma';
   value: string;
@@ -194,11 +200,13 @@ interface EditorShapeContext {
   imageDataUriByRelId: Map<string, string>;
   readOnlyReason?: string;
   formulaRefs?: Map<string, number>;
+  masterShapeById?: Map<string, any>;
 }
 
 interface MasterShapeEntry {
   shape: any;
   shapes: any[];
+  shapeById: Map<string, any>;
   imageDataUriByRelId: Map<string, string>;
 }
 
@@ -207,6 +215,7 @@ type StyleCategory = 'line' | 'fill' | 'text';
 interface StyleSheetContext {
   byId: Map<string, StyleSheetEntry>;
   fontFaces: Map<string, string>;
+  themeColors: Map<string, string>;
   resolvedCellCache: Map<string, any[]>;
   resolvedSectionCache: Map<string, any[]>;
 }
@@ -395,6 +404,13 @@ export async function readVsdxDiagramFromFile(filePath: string): Promise<{ bytes
 }
 
 export async function readVsdxDiagram(bytes: Buffer, sourceName: string): Promise<VsdxEditorDiagram> {
+  if (isVisioLockFilePath(sourceName)) {
+    return createUnsupportedVisioDiagram(
+      sourceName,
+      'This is a temporary Visio lock file created while the real drawing is open. It is intentionally ignored by preview, editing, QA, and workspace risk scans. Open the matching non-lock Visio file instead.'
+    );
+  }
+
   const formatSupport = getVisioFormatSupport(sourceName);
   if (formatSupport === 'legacy-binary') {
     return createUnsupportedVisioDiagram(
@@ -560,13 +576,15 @@ function readLegacyXmlMasterShapes(document: any): Map<string, MasterShapeEntry>
       continue;
     }
 
+    const shapes = toArray(master?.Shapes?.Shape).map(normalizeLegacyXmlShape);
     masterShapes.set(id, {
       shape: {
         ...normalizeLegacyXmlShape(firstShape),
         Name: master?.Name ?? firstShape?.Name,
         NameU: master?.NameU ?? firstShape?.NameU
       },
-      shapes: toArray(master?.Shapes?.Shape).map(normalizeLegacyXmlShape),
+      shapes,
+      shapeById: indexMasterShapes(shapes),
       imageDataUriByRelId: new Map()
     });
   }
@@ -907,32 +925,41 @@ function collectEditorShapes(
   const seenIds = new Map<string, number>();
 
   shapes.forEach((shape, index) => {
+    const shapeWithMasterRefs = context.masterShapeById
+      ? { ...shape, __masterShapeById: context.masterShapeById }
+      : shape;
     const modelId = createModelShapeId(shape, index, parentPath, idCounts, seenIds);
     if (!modelId) {
       return;
     }
 
-    const pageShape = parentTransform ? transformShapeCoordinates(shape, parentTransform) : shape;
-    const masterEntry = readMasterEntryFor(shape, context.masterShapes);
-    const masterShape = masterEntry?.shape;
+    const masterEntry = readMasterEntryFor(shapeWithMasterRefs, context.masterShapes);
+    const referencedMasterShape = readReferencedMasterShapeFor(shapeWithMasterRefs);
+    const masterShape = referencedMasterShape ?? masterEntry?.shape;
+    const masterFallbackCells = masterShape ? shapeTransformCells(masterShape) : [];
+    const pageShape = parentTransform
+      ? transformShapeCoordinates(shapeWithMasterRefs, parentTransform, masterFallbackCells)
+      : shapeWithMasterRefs;
     const masterImageDataUriByRelId = masterEntry?.imageDataUriByRelId ?? new Map();
+    const childContext = masterEntry?.shapeById
+      ? { ...context, masterShapeById: masterEntry.shapeById }
+      : context;
     const editorShape = toEditorShape(pageShape, {
       ...context,
       modelId
     });
-    if (editorShape) {
+    if (editorShape && shouldIncludeEditorShape(editorShape)) {
       collected.push(editorShape);
     }
 
     const childShapes = toArray(shape?.Shapes?.Shape);
     if (childShapes.length > 0) {
-      const childTransform = createLocalToPageTransform(shape, parentTransform);
-      collected.push(...collectEditorShapes(childShapes, context, modelId, childTransform));
-      return;
+      const childTransform = createLocalToPageTransform(shapeWithMasterRefs, parentTransform, masterFallbackCells);
+      collected.push(...collectEditorShapes(childShapes, childContext, modelId, childTransform));
     }
 
     const masterChildShapes = masterEntry ? inheritedMasterPreviewShapes(masterEntry) : [];
-    if (masterChildShapes.length > 0) {
+    if (!hasMasterShapeReferences(childShapes) && masterChildShapes.length > 0) {
       const masterTransform = createMasterToPageTransform(pageShape, masterShape);
       if (masterTransform) {
         collected.push(...collectEditorShapes(
@@ -950,6 +977,41 @@ function collectEditorShapes(
   });
 
   return collected;
+}
+
+function shouldIncludeEditorShape(shape: VsdxEditorShape): boolean {
+  if (isEffectivelyHiddenShape(shape)) {
+    return false;
+  }
+  if (shape.kind === 'connector') {
+    return [shape.beginX, shape.beginY, shape.endX, shape.endY].some(value => value !== undefined)
+      || hasVisibleGeometryPaths(shape)
+      || shape.text.length > 0;
+  }
+
+  return [shape.x, shape.y, shape.width, shape.height].every(value => value !== undefined)
+    && (
+      hasVisibleGeometryPaths(shape)
+      || Boolean(shape.imageDataUri)
+      || shape.text.length > 0
+      || (Boolean(shape.editable) && shape.suppressDefaultGeometry !== true)
+    );
+}
+
+function hasVisibleGeometryPaths(shape: VsdxEditorShape): boolean {
+  if (shape.geometryPaths?.some(path => path.path.length > 0 && (!path.noFill || !path.noLine))) {
+    return true;
+  }
+  return Boolean(shape.geometryPath);
+}
+
+function isEffectivelyHiddenShape(shape: VsdxEditorShape): boolean {
+  if (shape.imageDataUri || shape.text.length > 0) {
+    return false;
+  }
+  const fillHidden = shape.fill === 'none' || shape.fillOpacity === 0;
+  const lineHidden = shape.line === 'none' || shape.strokeOpacity === 0;
+  return fillHidden && lineHidden;
 }
 
 function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape | undefined {
@@ -984,7 +1046,12 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const flipX = readCellNumber(effectiveCells, 'FlipX', shapeFormulaRefs) === 1;
   const flipY = readCellNumber(effectiveCells, 'FlipY', shapeFormulaRefs) === 1;
   const textBox = readTextBox(effectiveCells, shapeFormulaRefs);
-  const textStyle = readTextStyle(effectiveCells, effectiveSections, shapeFormulaRefs, context.styleSheets.fontFaces);
+  const textStyle = readTextStyle(
+    effectiveCells,
+    effectiveSections,
+    shapeFormulaRefs,
+    context.styleSheets.fontFaces
+  );
   const shadow = readShadowStyle(effectiveCells, shapeFormulaRefs);
   const hasChildShapes = toArray(shape?.Shapes?.Shape).length > 0;
   const isConnector = isConnectorShape(shape) || isConnectorShape(masterShape);
@@ -997,12 +1064,12 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     id,
     name: String(shape?.Name ?? shape?.NameU ?? masterShape?.Name ?? masterShape?.NameU ?? id),
     text,
-    fill: readFillColor(effectiveCells),
+    fill: readFillColor(effectiveCells, context.styleSheets.themeColors),
     fillOpacity: readOpacityCell(effectiveCells, 'FillForegndTrans', shapeFormulaRefs),
     fillPattern,
-    fillBackground: readFillBackgroundColor(effectiveCells),
+    fillBackground: readFillBackgroundColor(effectiveCells, context.styleSheets.themeColors),
     fillBackgroundOpacity: readOpacityCell(effectiveCells, 'FillBkgndTrans', shapeFormulaRefs),
-    line: readLineColor(effectiveCells),
+    line: readLineColor(effectiveCells, context.styleSheets.themeColors),
     strokeOpacity: readOpacityCell(effectiveCells, 'LineColorTrans', shapeFormulaRefs),
     linePattern,
     lineCap,
@@ -1010,7 +1077,7 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     shadow,
     beginArrowSize,
     endArrowSize,
-    strokeWidth: Math.max(0.015, lineWeight ?? 0.02)
+    strokeWidth: Math.max(0, lineWeight ?? 0.02)
   };
   if (textBox) {
     (base as typeof base & { textBox: VsdxEditorTextBox }).textBox = textBox;
@@ -1028,9 +1095,10 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     const pinY = readCellNumber(cells, 'PinY', shapeFormulaRefs);
     const width = readCellNumber(effectiveCells, 'Width', shapeFormulaRefs);
     const height = readCellNumber(effectiveCells, 'Height', shapeFormulaRefs);
-    const geometryPaths = width !== undefined && height !== undefined
-      ? compileGeometryPaths(shape, masterShape, width, height)
+    const geometry = width !== undefined && height !== undefined
+      ? compileGeometry(shape, masterShape, width, height)
       : undefined;
+    const geometryPaths = geometry?.paths;
     const geometryPath = geometryPaths?.map(item => item.path).join(' ');
     const editable = !readOnlyReason && [beginX, beginY, endX, endY].every(value => value !== undefined) && !hasChildShapes;
     return {
@@ -1049,7 +1117,8 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
       beginArrow,
       endArrow,
       geometryPath,
-      geometryPaths
+      geometryPaths,
+      suppressDefaultGeometry: geometry?.hasGeometrySource === true && (geometryPaths?.length ?? 0) === 0
     };
   }
 
@@ -1057,9 +1126,10 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
   const pinY = readCellNumber(cells, 'PinY', shapeFormulaRefs);
   const width = readCellNumber(effectiveCells, 'Width', shapeFormulaRefs);
   const height = readCellNumber(effectiveCells, 'Height', shapeFormulaRefs);
-  const geometryPaths = width !== undefined && height !== undefined
-    ? compileGeometryPaths(shape, masterShape, width, height)
+  const geometry = width !== undefined && height !== undefined
+    ? compileGeometry(shape, masterShape, width, height)
     : undefined;
+  const geometryPaths = geometry?.paths;
   const geometryPath = geometryPaths?.map(item => item.path).join(' ');
   const editable = !readOnlyReason
     && [pinX, pinY, width, height].every(value => value !== undefined)
@@ -1078,7 +1148,8 @@ function toEditorShape(shape: any, context: EditorShapeContext): VsdxEditorShape
     flipY,
     imageDataUri,
     geometryPath,
-    geometryPaths
+    geometryPaths,
+    suppressDefaultGeometry: geometry?.hasGeometrySource === true && (geometryPaths?.length ?? 0) === 0
   };
 }
 
@@ -1503,6 +1574,7 @@ async function readMasterShapes(zip: JSZip): Promise<Map<string, MasterShapeEntr
               NameU: master?.NameU ?? candidate?.NameU
             }
             : candidate),
+          shapeById: indexMasterShapes(shapes),
           imageDataUriByRelId
         }
       }
@@ -1530,7 +1602,10 @@ async function readStyleSheets(zip: JSZip): Promise<StyleSheetContext> {
 
   const parsed = xmlParser.parse(await documentFile.async('text'));
   const document = parsed.VisioDocument ?? parsed['VisioDocument'];
-  return readStyleSheetsFromDocument(document);
+  return {
+    ...readStyleSheetsFromDocument(document),
+    themeColors: await readThemeColors(zip)
+  };
 }
 
 function readStyleSheetsFromDocument(document: any): StyleSheetContext {
@@ -1554,13 +1629,59 @@ function readStyleSheetsFromDocument(document: any): StyleSheetContext {
   return {
     byId,
     fontFaces: readFontFacesFromDocument(document),
+    themeColors: new Map(),
     resolvedCellCache: new Map(),
     resolvedSectionCache: new Map()
   };
 }
 
 function emptyStyleSheets(): StyleSheetContext {
-  return { byId: new Map(), fontFaces: new Map(), resolvedCellCache: new Map(), resolvedSectionCache: new Map() };
+  return { byId: new Map(), fontFaces: new Map(), themeColors: new Map(), resolvedCellCache: new Map(), resolvedSectionCache: new Map() };
+}
+
+async function readThemeColors(zip: JSZip): Promise<Map<string, string>> {
+  const colors = new Map<string, string>();
+  const themeEntry = Object.keys(zip.files).find(name => /^visio\/theme\/theme\d+\.xml$/i.test(name));
+  const file = themeEntry ? zip.file(themeEntry) : undefined;
+  if (!file) {
+    return colors;
+  }
+
+  const parsed = xmlParser.parse(await file.async('text'));
+  const theme = parsed?.['a:theme'] ?? parsed?.theme;
+  const scheme = theme?.['a:themeElements']?.['a:clrScheme']
+    ?? theme?.themeElements?.clrScheme;
+  for (const key of Object.keys(scheme ?? {})) {
+    const color = readThemeSrgbColor(scheme[key]);
+    if (color) {
+      colors.set(key.replace(/^a:/, '').toLowerCase(), color);
+    }
+  }
+
+  const extensions = toArray(scheme?.['a:extLst']?.['a:ext'] ?? scheme?.extLst?.ext);
+  for (const extension of extensions) {
+    const variationList = extension?.['vt:variationClrSchemeLst'] ?? extension?.variationClrSchemeLst;
+    const firstVariation = toArray(variationList?.['vt:variationClrScheme'] ?? variationList?.variationClrScheme)[0];
+    if (!firstVariation) {
+      continue;
+    }
+    for (const key of Object.keys(firstVariation)) {
+      const color = readThemeSrgbColor(firstVariation[key]);
+      if (color) {
+        colors.set(key.replace(/^vt:/, '').toLowerCase(), color);
+      }
+    }
+  }
+  return colors;
+}
+
+function readThemeSrgbColor(value: any): string | undefined {
+  const color = value?.['a:srgbClr']?.val
+    ?? value?.srgbClr?.val
+    ?? value?.val;
+  return typeof color === 'string' && /^[0-9a-fA-F]{6}$/.test(color)
+    ? `#${color.toLowerCase()}`
+    : undefined;
 }
 
 function readFontFacesFromDocument(document: any): Map<string, string> {
@@ -2065,29 +2186,29 @@ function createPageFormulaRefs(pageWidth: number, pageHeight: number): Map<strin
   return refs;
 }
 
-function readFillColor(cells: unknown[]): string {
+function readFillColor(cells: unknown[], themeColors: Map<string, string>): string {
   const fillPattern = readCellNumber(cells, 'FillPattern');
   if (fillPattern === 0) {
     return 'none';
   }
-  return readColorCell(cells, 'FillForegnd')
+  return readColorCell(cells, 'FillForegnd', themeColors)
     ?? '#ffffff';
 }
 
-function readFillBackgroundColor(cells: unknown[]): string | undefined {
+function readFillBackgroundColor(cells: unknown[], themeColors: Map<string, string>): string | undefined {
   const fillPattern = readCellNumber(cells, 'FillPattern');
   if (fillPattern === undefined || fillPattern <= 1) {
     return undefined;
   }
-  return readColorCell(cells, 'FillBkgnd');
+  return readColorCell(cells, 'FillBkgnd', themeColors);
 }
 
-function readLineColor(cells: unknown[]): string {
+function readLineColor(cells: unknown[], themeColors: Map<string, string>): string {
   const linePattern = readCellNumber(cells, 'LinePattern');
   if (linePattern === 0) {
     return 'none';
   }
-  return readColorCell(cells, 'LineColor')
+  return readColorCell(cells, 'LineColor', themeColors)
     ?? '#586069';
 }
 
@@ -2163,11 +2284,37 @@ function readShadowBlurCell(cells: unknown[], refs?: Map<string, number>): numbe
 }
 
 function readOpacityCell(cells: unknown[], name: string, refs?: Map<string, number>): number | undefined {
+  const cell = cells.find((candidate: any) => candidate?.N === name) as any;
+  const explicitPercent = readPercentNumber(cell?.F) ?? readPercentNumber(cell?.V);
+  if (explicitPercent !== undefined) {
+    return transparencyPercentToOpacity(explicitPercent);
+  }
   const transparency = readCellNumber(cells, name, refs);
   if (transparency === undefined) {
     return undefined;
   }
-  return Math.max(0, Math.min(1, 1 - Math.max(0, Math.min(100, transparency)) / 100));
+  return transparencyNumberToOpacity(transparency);
+}
+
+function transparencyNumberToOpacity(value: number): number {
+  const transparencyPercent = value >= 0 && value <= 1 ? value * 100 : value;
+  return transparencyPercentToOpacity(transparencyPercent);
+}
+
+function transparencyPercentToOpacity(value: number): number {
+  return Math.max(0, Math.min(1, 1 - Math.max(0, Math.min(100, value)) / 100));
+}
+
+function readPercentNumber(value: unknown): number | undefined {
+  if (typeof value !== 'string' || !value.includes('%')) {
+    return undefined;
+  }
+  const match = value.match(/(-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)\s*%/);
+  if (!match) {
+    return undefined;
+  }
+  const number = Number(match[1]);
+  return Number.isFinite(number) ? number : undefined;
 }
 
 function readFontSizeCell(cells: unknown[], refs?: Map<string, number>): number | undefined {
@@ -2220,11 +2367,11 @@ function normalizeFontSize(value: number, unit?: string): number | undefined {
   }
   switch ((unit ?? '').toLowerCase()) {
     case 'pt':
-      return value / 72;
+      return value > 2 ? value / 72 : value;
     case 'mm':
-      return value / 25.4;
+      return value > 2 ? value / 25.4 : value;
     case 'cm':
-      return value / 2.54;
+      return value > 2 ? value / 2.54 : value;
     case 'in':
     case 'dl':
       return value;
@@ -2233,12 +2380,45 @@ function normalizeFontSize(value: number, unit?: string): number | undefined {
   }
 }
 
-function readColorCell(cells: unknown[], name: string): string | undefined {
+function readColorCell(cells: unknown[], name: string, themeColors = new Map<string, string>()): string | undefined {
   const cell = cells.find((candidate: any) => candidate?.N === name) as any;
   if (!cell) {
     return undefined;
   }
-  return normalizeColor(cell.F) ?? normalizeColor(cell.V);
+  return normalizeThemeColor(cell, name, themeColors)
+    ?? normalizeColor(isInheritedFormula(cell?.F) ? undefined : cell.F)
+    ?? normalizeColor(cell.V);
+}
+
+function normalizeThemeColor(cell: any, name: string, themeColors: Map<string, string>): string | undefined {
+  const formula = typeof cell?.F === 'string' ? cell.F : '';
+  if (!/THEMEVAL\s*\(/i.test(formula)) {
+    return undefined;
+  }
+  const named = formula.match(/THEMEVAL\s*\(\s*"([^"]+)"/i)?.[1]?.toLowerCase();
+  if (named) {
+    if (named.includes('fillcolor')) {
+      return themeColors.get('varcolor1') ?? themeColors.get('accent1');
+    }
+    if (named.includes('linecolor')) {
+      return themeColors.get('dk1') ?? themeColors.get('accent1');
+    }
+    if (named.includes('textcolor')) {
+      return themeColors.get('dk1') ?? '#000000';
+    }
+  }
+
+  if (name === 'FillForegnd') {
+    return themeColors.get('varcolor1') ?? themeColors.get('accent1');
+  }
+  if (name === 'LineColor') {
+    return themeColors.get('dk1') ?? '#000000';
+  }
+  return undefined;
+}
+
+function isInheritedFormula(value: unknown): boolean {
+  return typeof value === 'string' && /^(inh|no formula)$/i.test(value.trim());
 }
 
 function normalizeColor(value: unknown): string | undefined {
@@ -2355,10 +2535,15 @@ function styleCellsForCategory(
 
   const baseCells = styleId === '0' ? [] : styleCellsForCategory('0', category, styleSheets, seen);
   const parentCells = parentStyleId === '0' ? [] : styleCellsForCategory(parentStyleId, category, styleSheets, seen);
+  const localCells = styleSheet.cells.filter(cell =>
+    isStyleCellForCategory(cell, category)
+    && isMeaningfulStyleCell(cell)
+    && !isNeutralNoStyleTextBackgroundCell(styleId, category, cell)
+  );
   const resolved = mergeEffectiveCellLayers(
     baseCells,
     parentCells,
-    styleSheet.cells.filter(cell => isStyleCellForCategory(cell, category) && isMeaningfulStyleCell(cell))
+    localCells
   );
   styleSheets.resolvedCellCache.set(cacheKey, resolved.map(cell => cloneXml(cell)));
   return resolved;
@@ -2404,6 +2589,21 @@ function styleSectionsForCategory(
 function isTextStyleSection(section: any): boolean {
   const name = String(section?.N ?? '').toLowerCase();
   return name === 'character' || name === 'paragraph';
+}
+
+function isNeutralNoStyleTextBackgroundCell(styleId: string, category: StyleCategory, cell: any): boolean {
+  if (styleId !== '0' || category !== 'text') {
+    return false;
+  }
+  const name = String(cell?.N ?? '');
+  if (name !== 'TextBkgnd' && name !== 'TextBkgndTrans') {
+    return false;
+  }
+  const formula = String(cell?.F ?? '').trim().toLowerCase();
+  if (formula && formula !== 'inh' && formula !== 'no formula') {
+    return false;
+  }
+  return String(cell?.V ?? '').trim() === '0';
 }
 
 function mergeEffectiveCellLayers(...layers: any[][]): any[] {
@@ -2464,6 +2664,12 @@ function isStyleCellForCategory(cell: any, category: StyleCategory): boolean {
 
 function isMeaningfulEffectiveCell(cell: any): boolean {
   const formula = String(cell?.F ?? '').trim().toLowerCase();
+  if (formula === 'inh') {
+    return hasConcreteCachedCellValue(cell);
+  }
+  if (formula === 'no formula') {
+    return false;
+  }
   if (String(cell?.V ?? '').trim().toLowerCase() === 'themed' && formula.length === 0) {
     return false;
   }
@@ -2473,8 +2679,21 @@ function isMeaningfulEffectiveCell(cell: any): boolean {
   return true;
 }
 
+function hasConcreteCachedCellValue(cell: any): boolean {
+  const value = String(cell?.V ?? '').trim();
+  if (!value || value.toLowerCase() === 'themed') {
+    return false;
+  }
+  return true;
+}
+
 function readMasterShapeFor(shape: any, masterShapes: Map<string, MasterShapeEntry>): any | undefined {
-  return readMasterEntryFor(shape, masterShapes)?.shape;
+  return readReferencedMasterShapeFor(shape) ?? readMasterEntryFor(shape, masterShapes)?.shape;
+}
+
+function readReferencedMasterShapeFor(shape: any): any | undefined {
+  const masterShapeId = normalizedId(shape?.MasterShape);
+  return masterShapeId ? shape?.__masterShapeById?.get(masterShapeId) : undefined;
 }
 
 function inheritedMasterPreviewShapes(masterEntry: MasterShapeEntry): any[] {
@@ -2484,6 +2703,13 @@ function inheritedMasterPreviewShapes(masterEntry: MasterShapeEntry): any[] {
   ];
 }
 
+function hasMasterShapeReferences(shapes: any[]): boolean {
+  return shapes.some(shape =>
+    normalizedId(shape?.MasterShape) !== undefined
+    || hasMasterShapeReferences(toArray(shape?.Shapes?.Shape))
+  );
+}
+
 function readMasterImageDataUriByRelIdFor(shape: any, masterShapes: Map<string, MasterShapeEntry>): Map<string, string> {
   return readMasterEntryFor(shape, masterShapes)?.imageDataUriByRelId ?? new Map();
 }
@@ -2491,6 +2717,23 @@ function readMasterImageDataUriByRelIdFor(shape: any, masterShapes: Map<string, 
 function readMasterEntryFor(shape: any, masterShapes: Map<string, MasterShapeEntry>): MasterShapeEntry | undefined {
   const masterId = normalizedId(shape?.Master);
   return masterId ? masterShapes.get(masterId) : undefined;
+}
+
+function indexMasterShapes(shapes: any[]): Map<string, any> {
+  const byId = new Map<string, any>();
+  const visit = (shape: any): void => {
+    const id = normalizedId(shape?.ID);
+    if (id && !byId.has(id)) {
+      byId.set(id, shape);
+    }
+    for (const child of toArray(shape?.Shapes?.Shape)) {
+      visit(child);
+    }
+  };
+  for (const shape of shapes) {
+    visit(shape);
+  }
+  return byId;
 }
 
 function readShapeImageDataUri(shape: any, imageDataUriByRelId: Map<string, string>): string | undefined {
@@ -2642,20 +2885,25 @@ function inferMimeTypeFromBase64(base64: string): string | undefined {
 }
 
 function compileGeometryPaths(shape: any, masterShape: any, targetWidth: number, targetHeight: number): VsdxEditorGeometryPath[] | undefined {
+  return compileGeometry(shape, masterShape, targetWidth, targetHeight).paths;
+}
+
+function compileGeometry(shape: any, masterShape: any, targetWidth: number, targetHeight: number): CompiledGeometry {
   const candidates = [
     ...mergedGeometrySourcesFor(shape, masterShape, targetWidth, targetHeight),
     ...geometrySourcesFor(shape),
     ...geometrySourcesFor(masterShape)
   ];
+  const hasGeometrySource = candidates.length > 0;
 
   for (const source of candidates) {
     const paths = compileGeometrySource(source, targetWidth, targetHeight);
     if (paths.length > 0) {
-      return paths;
+      return { paths, hasGeometrySource };
     }
   }
 
-  return undefined;
+  return { hasGeometrySource };
 }
 
 function compileGeometrySource(source: GeometrySource, targetWidth: number, targetHeight: number): VsdxEditorGeometryPath[] {
@@ -2762,11 +3010,8 @@ function compileGeometryRow(
   }
   if (rowType === 'ellipticalarcto' || rowType === 'relellipticalarcto') {
     const control = readGeometryPointPair(cells, 'A', 'B', context, relative);
-    if (control) {
-      commands.push(`Q ${formatPoint(control)} ${formatPoint(point)}`);
-    } else {
-      commands.push(pathCommand('L', point));
-    }
+    const arc = control ? ellipticalArcCommand(lastPoint, point, control, cells, context) : undefined;
+    commands.push(arc ?? (control ? `Q ${formatPoint(control)} ${formatPoint(point)}` : pathCommand('L', point)));
     return { lastPoint: point };
   }
   if (rowType === 'quadbezto' || rowType === 'relquadbezto') {
@@ -2978,7 +3223,7 @@ function rememberSectionRowRefs(
   refs: Map<string, number>,
   context?: GeometryContext
 ): void {
-  const rowNumber = rowNumberFor(row, 1);
+  const rowNumber = rowNumberForSection(section, row, 1);
   const sectionNames = sectionFormulaNames(section, sectionIndex);
   for (const cell of cells) {
     if (typeof cell?.N !== 'string') {
@@ -3003,8 +3248,17 @@ function sectionFormulaNames(section: any, sectionIndex: number): string[] {
   return name ? [name] : [];
 }
 
-function rowNumberFor(row: any, fallback: number): number {
-  return Math.max(1, Math.trunc(cleanNumber(row?.IX, fallback)));
+function rowNumberForSection(section: any, row: any, fallback: number): number {
+  const ix = cleanNumber(row?.IX, fallback);
+  const sectionName = String(section?.N ?? '').toLowerCase();
+  if (sectionName !== 'geometry' && sectionHasZeroBasedRows(section)) {
+    return Math.max(1, Math.trunc(ix) + 1);
+  }
+  return Math.max(1, Math.trunc(ix));
+}
+
+function sectionHasZeroBasedRows(section: any): boolean {
+  return toArray(section?.Row).some(row => String(row?.IX ?? '') === '0');
 }
 
 function readGeometryCellNumber(cells: any[], name: string, context: GeometryContext): number | undefined {
@@ -3147,6 +3401,89 @@ function toGeometryPoint(x: number, y: number, context: GeometryContext, relativ
   return {
     x: scaledX,
     y: context.targetHeight - scaledY
+  };
+}
+
+function ellipticalArcCommand(start: Point, end: Point, control: Point, cells: any[], context: GeometryContext): string | undefined {
+  const axisAngle = readGeometryCellNumber(cells, 'C', context) ?? 0;
+  const ratio = Math.abs(readGeometryCellNumber(cells, 'D', context) ?? 1);
+  if (!Number.isFinite(ratio) || ratio <= 0.0001 || ratio > 1000 || samePoint(start, end)) {
+    return undefined;
+  }
+
+  const phi = -axisAngle;
+  const startAxis = rotatePoint(start, -phi);
+  const endAxis = rotatePoint(end, -phi);
+  const controlAxis = rotatePoint(control, -phi);
+  const centerAxis = ellipseCenterFromThreeAxisPoints(startAxis, endAxis, controlAxis, ratio);
+  if (!centerAxis) {
+    return undefined;
+  }
+
+  const minorRadiusSquared = ((startAxis.x - centerAxis.x) ** 2) / (ratio ** 2)
+    + (startAxis.y - centerAxis.y) ** 2;
+  if (!Number.isFinite(minorRadiusSquared) || minorRadiusSquared <= 0.00000001) {
+    return undefined;
+  }
+  const ry = Math.sqrt(minorRadiusSquared);
+  const rx = Math.max(0.0001, ratio * ry);
+  const startAngle = ellipsePointAngle(startAxis, centerAxis, rx, ry);
+  const endAngle = ellipsePointAngle(endAxis, centerAxis, rx, ry);
+  const controlAngle = ellipsePointAngle(controlAxis, centerAxis, rx, ry);
+  const positiveDelta = normalizedAngleDelta(endAngle - startAngle);
+  const negativeDelta = normalizedAngleDelta(startAngle - endAngle);
+  const sweepPositive = angleIsOnArc(startAngle, endAngle, controlAngle, true)
+    || !angleIsOnArc(startAngle, endAngle, controlAngle, false);
+  const delta = sweepPositive ? positiveDelta : negativeDelta;
+  const largeArc = delta > Math.PI ? 1 : 0;
+  const sweep = sweepPositive ? 1 : 0;
+  const rotationDegrees = phi * 180 / Math.PI;
+  return `A ${formatNumber(rx)} ${formatNumber(ry)} ${formatNumber(rotationDegrees)} ${largeArc} ${sweep} ${formatPoint(end)}`;
+}
+
+function ellipseCenterFromThreeAxisPoints(start: Point, end: Point, control: Point, ratio: number): Point | undefined {
+  const ratioSquared = ratio ** 2;
+  const first = ellipseCenterEquation(start, end, ratioSquared);
+  const second = ellipseCenterEquation(start, control, ratioSquared);
+  const determinant = first.a * second.b - second.a * first.b;
+  if (Math.abs(determinant) < 0.00000001) {
+    return undefined;
+  }
+  return {
+    x: (first.c * second.b - second.c * first.b) / determinant,
+    y: (first.a * second.c - second.a * first.c) / determinant
+  };
+}
+
+function ellipseCenterEquation(origin: Point, point: Point, ratioSquared: number): { a: number; b: number; c: number } {
+  return {
+    a: -2 * (point.x - origin.x) / ratioSquared,
+    b: -2 * (point.y - origin.y),
+    c: -(((point.x ** 2 - origin.x ** 2) / ratioSquared) + point.y ** 2 - origin.y ** 2)
+  };
+}
+
+function ellipsePointAngle(point: Point, center: Point, rx: number, ry: number): number {
+  return Math.atan2((point.y - center.y) / ry, (point.x - center.x) / rx);
+}
+
+function angleIsOnArc(start: number, end: number, point: number, positive: boolean): boolean {
+  const delta = positive ? normalizedAngleDelta(end - start) : normalizedAngleDelta(start - end);
+  const pointDelta = positive ? normalizedAngleDelta(point - start) : normalizedAngleDelta(start - point);
+  return pointDelta <= delta + 0.00001;
+}
+
+function normalizedAngleDelta(value: number): number {
+  const tau = Math.PI * 2;
+  return ((value % tau) + tau) % tau;
+}
+
+function rotatePoint(point: Point, angle: number): Point {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return {
+    x: point.x * cos - point.y * sin,
+    y: point.x * sin + point.y * cos
   };
 }
 
@@ -3497,11 +3834,12 @@ function createModelShapeId(
   return parentPath ? `${parentPath}/${localId}` : localId;
 }
 
-function transformShapeCoordinates(shape: any, parentTransform: PointTransform): any {
+function transformShapeCoordinates(shape: any, parentTransform: PointTransform, fallbackCells: any[] = []): any {
   const cells = toArray(shape?.Cell);
   const transformedCells = cells.map((cell: any) => ({ ...cell }));
-  const localToPageTransform = createLocalToPageTransform(shape, parentTransform);
-  const formulaRefs = createShapeFormulaRefs(cells);
+  const transformCells = mergeCells(fallbackCells, cells);
+  const localToPageTransform = createLocalToPageTransform(shape, parentTransform, fallbackCells);
+  const formulaRefs = createShapeFormulaRefs(transformCells);
   transformCellPointPair(transformedCells, parentTransform, 'PinX', 'PinY', formulaRefs);
   transformCellPointPair(transformedCells, parentTransform, 'BeginX', 'BeginY', formulaRefs);
   transformCellPointPair(transformedCells, parentTransform, 'EndX', 'EndY', formulaRefs);
@@ -3512,7 +3850,7 @@ function transformShapeCoordinates(shape: any, parentTransform: PointTransform):
   };
 
   if (!isConnectorShape(pageShape)) {
-    normalizeShapeBounds(cells, transformedCells, localToPageTransform);
+    normalizeShapeBounds(transformCells, transformedCells, localToPageTransform);
   }
 
   return pageShape;
@@ -3536,8 +3874,12 @@ function transformCellPointPair(
   setCellNumber(cells, yName, point.y);
 }
 
-function createLocalToPageTransform(shape: any, parentTransform?: PointTransform): PointTransform | undefined {
-  const cells = shapeTransformCells(shape);
+function createLocalToPageTransform(
+  shape: any,
+  parentTransform?: PointTransform,
+  fallbackCells: any[] = []
+): PointTransform | undefined {
+  const cells = mergeCells(fallbackCells, shapeTransformCells(shape));
   const formulaRefs = createShapeFormulaRefs(cells);
   const pinX = readCellNumber(cells, 'PinX', formulaRefs);
   const pinY = readCellNumber(cells, 'PinY', formulaRefs);
@@ -3609,12 +3951,12 @@ function transformedLocalBounds(
 
 function createMasterToPageTransform(instanceShape: any, masterShape: any): PointTransform | undefined {
   const instanceCells = toArray(instanceShape?.Cell);
-  const masterCells = toArray(masterShape?.Cell);
+  const masterCells = shapeTransformCells(masterShape);
   const instanceWidth = readCellNumber(instanceCells, 'Width') ?? readCellNumber(masterCells, 'Width');
   const instanceHeight = readCellNumber(instanceCells, 'Height') ?? readCellNumber(masterCells, 'Height');
   const masterWidth = readCellNumber(masterCells, 'Width') ?? instanceWidth;
   const masterHeight = readCellNumber(masterCells, 'Height') ?? instanceHeight;
-  const instanceTransform = createLocalToPageTransform(instanceShape);
+  const instanceTransform = createLocalToPageTransform(instanceShape, undefined, masterCells);
   if (!instanceTransform || !instanceWidth || !instanceHeight || !masterWidth || !masterHeight) {
     return undefined;
   }

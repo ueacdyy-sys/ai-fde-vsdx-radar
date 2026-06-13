@@ -17,32 +17,57 @@ export const allVisioOpenDialogExtensions = allVisioExtensions.map(extension => 
 
 export type VisioFormatSupport = 'modern-package' | 'legacy-xml' | 'legacy-binary' | 'legacy-opaque' | 'unknown';
 
+export function isVisioLockFilePath(filePath: string): boolean {
+  return path.basename(filePath).startsWith('~$$');
+}
+
 export function isModernVisioPath(filePath: string): boolean {
+  if (isVisioLockFilePath(filePath)) {
+    return false;
+  }
   return modernVisioExtensions.includes(path.extname(filePath).toLowerCase() as typeof modernVisioExtensions[number]);
 }
 
 export function isLegacyXmlVisioPath(filePath: string): boolean {
+  if (isVisioLockFilePath(filePath)) {
+    return false;
+  }
   return legacyXmlVisioExtensions.includes(path.extname(filePath).toLowerCase() as typeof legacyXmlVisioExtensions[number]);
 }
 
 export function isLegacyBinaryVisioPath(filePath: string): boolean {
+  if (isVisioLockFilePath(filePath)) {
+    return false;
+  }
   return legacyBinaryVisioExtensions.includes(path.extname(filePath).toLowerCase() as typeof legacyBinaryVisioExtensions[number]);
 }
 
 export function isLegacyOpaqueVisioPath(filePath: string): boolean {
+  if (isVisioLockFilePath(filePath)) {
+    return false;
+  }
   return legacyOpaqueVisioExtensions.includes(path.extname(filePath).toLowerCase() as typeof legacyOpaqueVisioExtensions[number]);
 }
 
 export function isLegacyVisioPath(filePath: string): boolean {
+  if (isVisioLockFilePath(filePath)) {
+    return false;
+  }
   return legacyVisioExtensions.includes(path.extname(filePath).toLowerCase() as typeof legacyVisioExtensions[number]);
 }
 
 export function isSemanticVisioPath(filePath: string): boolean {
+  if (isVisioLockFilePath(filePath)) {
+    return false;
+  }
   const extension = path.extname(filePath).toLowerCase();
   return semanticVisioExtensions.includes(extension as typeof semanticVisioExtensions[number]);
 }
 
 export function isVisioPath(filePath: string): boolean {
+  if (isVisioLockFilePath(filePath)) {
+    return false;
+  }
   const extension = path.extname(filePath).toLowerCase();
   return allVisioExtensions.includes(extension as typeof allVisioExtensions[number]);
 }

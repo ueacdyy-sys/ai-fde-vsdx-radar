@@ -13,6 +13,7 @@ import {
   allVisioOpenDialogExtensions,
   isLegacyVisioPath,
   isSemanticVisioPath,
+  isVisioLockFilePath,
   isVisioPath,
   semanticVisioOpenDialogExtensions,
   resolvePreviewPath,
@@ -52,6 +53,12 @@ interface VsdxStatus {
   errors: number;
   warnings: number;
   previewFreshnessReasons: string[];
+}
+
+interface VsdxContentRiskStatus {
+  badge: 'E' | 'R';
+  color: string;
+  tooltip: string;
 }
 
 interface WorkspaceReportItem {
@@ -302,9 +309,15 @@ const radarConfigKeySet = new Set<string>(radarConfigKeys);
 
 class VsdxDecorationProvider implements vscode.FileDecorationProvider {
   private readonly emitter = new vscode.EventEmitter<vscode.Uri | vscode.Uri[] | undefined>();
+  private readonly cache = new Map<string, { expiresAt: number; decoration?: vscode.FileDecoration }>();
   readonly onDidChangeFileDecorations = this.emitter.event;
 
   refresh(uri?: vscode.Uri): void {
+    if (uri?.fsPath) {
+      this.cache.delete(uri.fsPath);
+    } else {
+      this.cache.clear();
+    }
     this.emitter.fire(uri);
   }
 
@@ -313,12 +326,19 @@ class VsdxDecorationProvider implements vscode.FileDecorationProvider {
       return undefined;
     }
 
-    const status = await getVsdxStatus(uri.fsPath);
-    return new vscode.FileDecoration(
+    const cached = this.cache.get(uri.fsPath);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.decoration;
+    }
+
+    const status = await getVsdxContentRiskStatus(uri.fsPath);
+    const decoration = status ? new vscode.FileDecoration(
       status.badge,
       status.tooltip,
       new vscode.ThemeColor(status.color)
-    );
+    ) : undefined;
+    this.cache.set(uri.fsPath, { expiresAt: Date.now() + 2000, decoration });
+    return decoration;
   }
 }
 
@@ -328,6 +348,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const decorations = new VsdxDecorationProvider();
   context.subscriptions.push(vscode.window.registerFileDecorationProvider(decorations));
   context.subscriptions.push(VsdxInteractiveEditorProvider.register(context, output, getVsdxStatus));
+  registerVisioTextEditorRecovery(context);
 
   context.subscriptions.push(vscode.commands.registerCommand('aiFdeVsdxRadar.openInteractiveEditor', async (uri?: vscode.Uri) => {
     await runSafely(async () => {
@@ -680,7 +701,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(vscode.commands.registerCommand('aiFdeVsdxRadar.openWorkspaceRiskDashboard', async () => {
     await runSafely(async () => {
       const collection = await withProgress('Opening workspace VSDX risk dashboard', () => collectWorkspaceReportItems());
-      const riskItems = collection.items.filter(item => item.badge !== 'OK');
+      const riskItems = collection.items.filter(item => isContentRiskBadge(item.badge));
       const report = await writeWorkspaceReport(
         collection,
         riskItems,
@@ -698,7 +719,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(vscode.commands.registerCommand('aiFdeVsdxRadar.openHighestPriorityRisk', async () => {
     await runSafely(async () => {
       const collection = await withProgress('Opening highest priority VSDX risk', () => collectWorkspaceReportItems());
-      const risk = collection.items.find(item => item.badge !== 'OK');
+      const risk = collection.items.find(item => isContentRiskBadge(item.badge));
       if (!risk) {
         output.appendLine('[workspace-risk] no non-OK VSDX files found.');
         await vscode.window.showInformationMessage('AI-FDE VSDX Radar: no non-OK VSDX files found.');
@@ -715,7 +736,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(vscode.commands.registerCommand('aiFdeVsdxRadar.openNextDueRisk', async () => {
     await runSafely(async () => {
       const collection = await withProgress('Opening next due VSDX risk', () => collectWorkspaceReportItems());
-      const risk = sortRisksByDuePriority(collection.items.filter(item => item.badge !== 'OK'))[0];
+      const risk = sortRisksByDuePriority(collection.items.filter(item => isContentRiskBadge(item.badge)))[0];
       if (!risk) {
         output.appendLine('[workspace-risk:due] no non-OK VSDX files found.');
         await vscode.window.showInformationMessage('AI-FDE VSDX Radar: no non-OK VSDX files found.');
@@ -732,7 +753,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(vscode.commands.registerCommand('aiFdeVsdxRadar.openAllRiskReports', async () => {
     await runSafely(async () => {
       const collection = await withProgress('Opening all VSDX risk reports', () => collectWorkspaceReportItems());
-      const risks = collection.items.filter(item => item.badge !== 'OK');
+      const risks = collection.items.filter(item => isContentRiskBadge(item.badge));
       if (risks.length === 0) {
         output.appendLine('[workspace-risk] no non-OK VSDX files found.');
         await vscode.window.showInformationMessage('AI-FDE VSDX Radar: no non-OK VSDX files found.');
@@ -751,13 +772,115 @@ export function activate(context: vscode.ExtensionContext): void {
   const watcher = vscode.workspace.createFileSystemWatcher(allVisioFileGlob);
   context.subscriptions.push(watcher);
   watcher.onDidChange(uri => {
+    if (isVisioLockFilePath(uri.fsPath)) {
+      return;
+    }
     decorations.refresh(uri);
     scheduleAutoExport(context.extensionPath, uri, decorations);
   }, null, context.subscriptions);
   watcher.onDidCreate(uri => {
+    if (isVisioLockFilePath(uri.fsPath)) {
+      return;
+    }
     decorations.refresh(uri);
     scheduleAutoExport(context.extensionPath, uri, decorations);
   }, null, context.subscriptions);
+}
+
+function registerVisioTextEditorRecovery(context: vscode.ExtensionContext): void {
+  const recovered = new Set<string>();
+  const pending = new Set<string>();
+
+  const recoverOpenTabs = (reason: string) => {
+    for (const group of vscode.window.tabGroups.all) {
+      for (const tab of group.tabs) {
+        const tabUri = getRecoverableVisioTabUri(tab.input);
+        const filePath = tabUri?.fsPath;
+        if (!filePath || recovered.has(filePath) || pending.has(filePath)) {
+          continue;
+        }
+        pending.add(filePath);
+        void vscode.commands.executeCommand(
+          'vscode.openWith',
+          tabUri,
+          interactiveEditorViewType,
+          { preview: false, viewColumn: group.viewColumn }
+        ).then(
+          () => {
+            pending.delete(filePath);
+            recovered.add(filePath);
+            output.appendLine(`[interactive-editor:recover-open-with:tab] reason=${reason} ${filePath}`);
+          },
+          error => {
+            pending.delete(filePath);
+            output.appendLine(`[interactive-editor:recover-open-with:tab:error] reason=${reason} ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        );
+      }
+    }
+  };
+  const recoverVisibleEditors = (reason: string) => {
+    for (const editor of vscode.window.visibleTextEditors) {
+      const filePath = editor.document.uri.fsPath;
+      if (!filePath || !isRecoverableVisioEditorPath(filePath) || recovered.has(filePath) || pending.has(filePath)) {
+        continue;
+      }
+      pending.add(filePath);
+      void vscode.commands.executeCommand(
+        'vscode.openWith',
+        editor.document.uri,
+        interactiveEditorViewType,
+        { preview: false }
+      ).then(
+        () => {
+          pending.delete(filePath);
+          recovered.add(filePath);
+          output.appendLine(`[interactive-editor:recover-open-with] reason=${reason} ${filePath}`);
+        },
+        error => {
+          pending.delete(filePath);
+          output.appendLine(`[interactive-editor:recover-open-with:error] reason=${reason} ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      );
+    }
+  };
+  const recoverEditors = (reason = 'event') => {
+    recoverOpenTabs(reason);
+    recoverVisibleEditors(reason);
+  };
+
+  recoverEditors('activate');
+  const startupRecoveryDelays = [50, 150, 300, 600, 1000, 1500, 2500, 4000, 6000];
+  const timers = startupRecoveryDelays.map(delay => setTimeout(() => recoverEditors(`startup+${delay}ms`), delay));
+  context.subscriptions.push({
+    dispose: () => timers.forEach(timer => clearTimeout(timer))
+  });
+  context.subscriptions.push(vscode.window.tabGroups.onDidChangeTabs(() => recoverEditors('tab-change')));
+  context.subscriptions.push(vscode.window.onDidChangeVisibleTextEditors(() => recoverEditors('visible-editor-change')));
+}
+
+function getRecoverableVisioTabUri(input: unknown): vscode.Uri | undefined {
+  if (input instanceof vscode.TabInputCustom) {
+    return input.viewType === interactiveEditorViewType ? undefined : toRecoverableVisioUri(input.uri);
+  }
+  if (input instanceof vscode.TabInputText) {
+    return toRecoverableVisioUri(input.uri);
+  }
+  return undefined;
+}
+
+function toRecoverableVisioUri(uri: vscode.Uri | undefined): vscode.Uri | undefined {
+  if (!uri || uri.scheme !== 'file' || !isRecoverableVisioEditorPath(uri.fsPath)) {
+    return undefined;
+  }
+  return uri;
+}
+
+function isRecoverableVisioEditorPath(filePath: string): boolean {
+  if (isVisioLockFilePath(filePath)) {
+    return false;
+  }
+  return isVisioPath(filePath);
 }
 
 export function deactivate(): void {
@@ -768,6 +891,10 @@ export function deactivate(): void {
 }
 
 async function resolveTargetPath(uri?: vscode.Uri, options: { allowLegacy?: boolean } = {}): Promise<string | undefined> {
+  if (uri?.fsPath && isVisioLockFilePath(uri.fsPath)) {
+    await vscode.window.showInformationMessage('AI-FDE VSDX Radar: Visio lock/temp files are ignored. Open the matching non-lock Visio file instead.');
+    return undefined;
+  }
   if (uri?.fsPath && isSemanticVisioPath(uri.fsPath)) {
     return uri.fsPath;
   }
@@ -791,12 +918,20 @@ async function resolveTargetPath(uri?: vscode.Uri, options: { allowLegacy?: bool
   });
 
   const selectedPath = selected?.[0]?.fsPath;
+  if (selectedPath && isVisioLockFilePath(selectedPath)) {
+    await vscode.window.showInformationMessage('AI-FDE VSDX Radar: Visio lock/temp files are ignored.');
+    return undefined;
+  }
   if (selectedPath && isLegacyVisioPath(selectedPath) && !options.allowLegacy) {
     await showLegacyVisioWarning();
     return undefined;
   }
 
   return selectedPath;
+}
+
+function isContentRiskBadge(badge: string): boolean {
+  return badge === 'E' || badge === 'R';
 }
 
 async function resolveConvertibleLegacyPath(uri?: vscode.Uri): Promise<string | undefined> {
@@ -929,7 +1064,7 @@ async function generateWorkspaceReport(): Promise<WorkspaceReportResult> {
 
 async function generateWorkspaceRiskReport(): Promise<WorkspaceReportResult> {
   const collection = await collectWorkspaceReportItems();
-  const riskItems = collection.items.filter(item => item.badge !== 'OK');
+  const riskItems = collection.items.filter(item => isContentRiskBadge(item.badge));
   return writeWorkspaceReport(
     collection,
     riskItems,
@@ -958,7 +1093,7 @@ async function generateWorkspaceTeamBoard(): Promise<WorkspaceTeamBoardResult> {
   const markdownPath = path.join(reportDir, 'workspace-vsdx-team-board.md');
   const generatedAt = new Date().toISOString();
   const today = generatedAt.slice(0, 10);
-  const riskItems = sortRisksByDuePriority(collection.items.filter(item => item.badge !== 'OK'));
+  const riskItems = sortRisksByDuePriority(collection.items.filter(item => isContentRiskBadge(item.badge)));
   const counts = countWorkspaceReportItems(riskItems);
   const ownerSummary = summarizeWorkspaceOwners(riskItems, today);
   const previewFreshnessSummary = summarizePreviewFreshnessReasonsForItems(riskItems);
@@ -1017,7 +1152,7 @@ async function generateDemoPack(): Promise<DemoPackResult> {
   const generatedAt = new Date().toISOString();
   const version = await readWorkspacePackageVersion(workspaceRoot);
   const collection = await collectWorkspaceReportItems();
-  const previewFreshnessSummary = summarizePreviewFreshnessReasonsForItems(collection.items.filter(item => item.badge !== 'OK'));
+  const previewFreshnessSummary = summarizePreviewFreshnessReasonsForItems(collection.items.filter(item => isContentRiskBadge(item.badge)));
   const artifacts = [
     ...await collectDemoPackWorkspaceArtifacts(workspaceRoot, version),
     ...await collectDemoPackDirectoryArtifacts(path.join(reportRoot, 'acceptance'), 'acceptance', /^acceptance-.*\.(md|json)$/i, 'Acceptance'),
@@ -1057,7 +1192,7 @@ async function exportWorkspaceDueRiskCalendar(): Promise<WorkspaceDueCalendarRes
   const icsPath = path.join(reportDir, 'workspace-vsdx-due-risk-calendar.ics');
   const generatedAt = new Date().toISOString();
   const dueRiskItems = sortRisksByDuePriority(collection.items.filter(item =>
-    item.badge !== 'OK' && normalizeDueDate(item.reviewDueDate)
+    isContentRiskBadge(item.badge) && normalizeDueDate(item.reviewDueDate)
   ));
 
   await fs.mkdir(reportDir, { recursive: true });
@@ -2260,7 +2395,9 @@ async function collectWorkspaceReportItems(): Promise<WorkspaceReportCollection>
   const uris = await vscode.workspace.findFiles(allVisioFileGlob, '**/{.aifde,.git,node_modules}/**');
   const items: WorkspaceReportItem[] = [];
 
-  for (const uri of uris.sort((a, b) => a.fsPath.localeCompare(b.fsPath))) {
+  for (const uri of uris
+    .filter(candidate => !isVisioLockFilePath(candidate.fsPath))
+    .sort((a, b) => a.fsPath.localeCompare(b.fsPath))) {
     const status = await getVsdxStatus(uri.fsPath);
     const folder = vscode.workspace.getWorkspaceFolder(uri);
     const relativePath = folder
@@ -2321,7 +2458,7 @@ function summarizeWorkspaceOwners(items: WorkspaceReportItem[], today: string): 
     const daysUntilDue = getDaysUntilDue(item.reviewDueDate, today);
 
     summary.total += 1;
-    summary.risks += item.badge === 'OK' ? 0 : 1;
+    summary.risks += isContentRiskBadge(item.badge) ? 1 : 0;
     summary.overdue += daysUntilDue !== undefined && daysUntilDue < 0 ? 1 : 0;
     summary.dueSoon += daysUntilDue !== undefined && daysUntilDue >= 0 && daysUntilDue <= 7 ? 1 : 0;
     summary.reviewStatusCounts[item.reviewStatus] += 1;
@@ -2431,7 +2568,7 @@ function filterDueRiskItems(items: WorkspaceReportItem[]): WorkspaceReportItem[]
   const today = new Date().toISOString().slice(0, 10);
   return sortRisksByDuePriority(items.filter(item => {
     const daysUntilDue = getDaysUntilDue(item.reviewDueDate, today);
-    return item.badge !== 'OK' && daysUntilDue !== undefined && daysUntilDue <= 7;
+    return isContentRiskBadge(item.badge) && daysUntilDue !== undefined && daysUntilDue <= 7;
   }));
 }
 
@@ -2734,7 +2871,7 @@ function toWorkspaceReportMarkdown(
   const countLabels = ['E', 'M', 'S', 'Q', 'R', 'OK']
     .map(label => `${label}=${counts[label] ?? 0}`)
     .join(', ');
-  const attentionItems = items.filter(item => item.badge !== 'OK');
+  const attentionItems = items.filter(item => isContentRiskBadge(item.badge));
 
   return [
     `# ${title}`,
@@ -3251,7 +3388,7 @@ function toWorkspaceRiskDashboardHtml(
     reportMarkdownPath: report.markdownPath,
     reportJsonPath: report.jsonPath,
     sourceTotal: collection.items.length,
-    riskTotal: collection.items.filter(item => item.badge !== 'OK').length,
+    riskTotal: collection.items.filter(item => isContentRiskBadge(item.badge)).length,
     today: new Date().toISOString().slice(0, 10),
     counts: collection.counts,
     statusLabels,
@@ -3742,6 +3879,10 @@ function toWorkspaceRiskDashboardHtml(
     const selected = new Set();
     let visibleItems = [];
 
+    function isContentRiskBadge(badge) {
+      return badge === 'E' || badge === 'R';
+    }
+
     const rows = document.getElementById('rows');
     const previewRows = document.getElementById('previewRows');
     const ownerRows = document.getElementById('ownerRows');
@@ -4009,7 +4150,7 @@ function toWorkspaceRiskDashboardHtml(
         const due = dueBucket(item);
         const status = item.reviewStatus || 'new';
         summary.total += 1;
-        summary.risks += item.badge === 'OK' ? 0 : 1;
+        summary.risks += isContentRiskBadge(item.badge) ? 1 : 0;
         summary.overdue += due === 'Overdue' ? 1 : 0;
         summary.dueSoon += due === 'Due in 7 days' ? 1 : 0;
         summary.statusCounts[status] = (summary.statusCounts[status] || 0) + 1;
@@ -4084,7 +4225,7 @@ function toWorkspaceRiskDashboardHtml(
           ...item.riskCodes,
           ...(item.previewFreshnessReasons || [])
         ].join(' ').toLowerCase();
-        return (!state.riskOnly || item.badge !== 'OK')
+        return (!state.riskOnly || isContentRiskBadge(item.badge))
           && (state.status === 'all' || item.badge === state.status)
           && (state.riskCode === 'all' || item.riskCodes.includes(state.riskCode))
           && (state.previewReason === 'all' || previewReasonMatches(item, state.previewReason))
@@ -4569,7 +4710,7 @@ async function getVsdxStatus(filePath: string): Promise<VsdxStatus> {
       qaPath,
       summaryPath,
       errors: 0,
-      warnings: 1,
+      warnings: 0,
       previewFreshnessReasons
     };
   }
@@ -4583,7 +4724,7 @@ async function getVsdxStatus(filePath: string): Promise<VsdxStatus> {
       qaPath,
       summaryPath,
       errors: 0,
-      warnings: 1,
+      warnings: 0,
       previewFreshnessReasons
     };
   }
@@ -4597,7 +4738,7 @@ async function getVsdxStatus(filePath: string): Promise<VsdxStatus> {
       qaPath,
       summaryPath,
       errors: 0,
-      warnings: 1,
+      warnings: 0,
       previewFreshnessReasons
     };
   }
@@ -4611,7 +4752,7 @@ async function getVsdxStatus(filePath: string): Promise<VsdxStatus> {
       qaPath,
       summaryPath,
       errors: 0,
-      warnings: 1,
+      warnings: 0,
       previewFreshnessReasons
     };
   }
@@ -4629,7 +4770,7 @@ async function getVsdxStatus(filePath: string): Promise<VsdxStatus> {
       qaPath,
       summaryPath,
       errors: 0,
-      warnings: 1,
+      warnings: 0,
       previewFreshnessReasons
     };
   }
@@ -4689,6 +4830,48 @@ async function getVsdxStatus(filePath: string): Promise<VsdxStatus> {
       previewFreshnessReasons
     };
   }
+}
+
+async function getVsdxContentRiskStatus(filePath: string): Promise<VsdxContentRiskStatus | undefined> {
+  const config = getRadarConfig();
+  const paths = resolveWorkspacePaths(filePath, config.outputDirectory);
+  const qaPath = resolveQaPath(filePath, paths.qaDir);
+  if (!existsSync(qaPath)) {
+    return undefined;
+  }
+
+  try {
+    const [sourceStat, qaStat] = await Promise.all([
+      fs.stat(filePath),
+      fs.stat(qaPath)
+    ]);
+    if (qaStat.mtimeMs < sourceStat.mtimeMs) {
+      return undefined;
+    }
+
+    const raw = await fs.readFile(qaPath, 'utf8');
+    const qa = JSON.parse(raw) as QaResult;
+    const errors = qa.risks.filter(risk => risk.severity === 'error').length;
+    const warnings = qa.risks.filter(risk => risk.severity === 'warning').length;
+    if (errors > 0) {
+      return {
+        badge: 'E',
+        color: 'charts.red',
+        tooltip: `AI-FDE VSDX Radar: ${errors} error(s), ${warnings} warning(s).`
+      };
+    }
+    if (warnings > 0) {
+      return {
+        badge: 'R',
+        color: 'charts.yellow',
+        tooltip: `AI-FDE VSDX Radar: ${warnings} warning(s).`
+      };
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
 }
 
 async function withProgress<T>(title: string, task: () => Promise<T>): Promise<T> {
